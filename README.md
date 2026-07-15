@@ -1,5 +1,3 @@
-from mimosa import BasicModel
-
 # MIMOSA: Multi-Input Multi-Output Sample Analysis 
 
 A fully-featured *multi-task Gaussian process framework* for analysing functional data.

@@ -30,7 +30,7 @@ Towards v1.0.0, we plan to add:
 You can install mimosa through pip:
 
 ```bash
-pip install mimosa-ml-ml
+pip install mimosa-ml
 ```
 
 You can then import components of the package as:

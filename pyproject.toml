@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mimosa-ml"
+version = "0.1.0"
+description = "MIMOSA: Multi-Input Multi-Output Sample Analysis - A fully-featured multi-task Gaussian process framework for analysing functional data."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    { name = "Simon Lejoly", email = "simon.lejoly@unamur.be" },
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+]
+dependencies = [
+    "jax",
+    "equinox",
+    "optimistix",
+    "kernax-ml",
+    "matplotlib",
+    "polars",
+    "numpy",
+    "beartype",
+    "jaxtyping",
+]
+
+[project.urls]
+Homepage = "https://github.com/SimLej18/mimosa"
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["mimosa"]

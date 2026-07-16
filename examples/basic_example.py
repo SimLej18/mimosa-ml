@@ -26,7 +26,7 @@ from mimosa.grid import UnionGrid
 from mimosa.plot import plot_dataset, plot_clusters, plot_single_task_prediction
 from mimosa.sampling import sample_gp
 
-key = jr.PRNGKey(0)
+key = jr.PRNGKey(42)
 plt.rcParams['figure.dpi']=300
 
 #%% 1. Configuration
@@ -67,6 +67,7 @@ dataset, grid, hyperprior, true_mixture, true_params, cluster_means, tasks = gen
 dataset = RandomDataRemover()(removal_key, dataset, removal_config)
 
 #%% 3bis. Alternatively, you can load a dataset from a local file through load_csv.
+# Check load_csv's doc or open the csv file to see the expected file format.
 save_csv("./dummy.csv", dataset)
 dataset = load_csv("./dummy.csv")
 
@@ -107,8 +108,9 @@ fitted_params, fitted_mixture = model.fit(dataset, fitted_grid, mixture_proporti
 #%% 7. Plot the fitted clusters (mean-processes)
 hyperposterior = model.hyperpost(dataset, fitted_grid, fitted_mixture, fitted_params, jitter=model.jitter)
 
-fig, ax = plot_clusters(fitted_grid, hyperposterior=hyperposterior, figsize=(8*dims.O, 6))
-fig.suptitle("Fitted clusters (mean-processes)")
+fig, ax = plot_dataset(dataset, mixture=true_mixture, figsize=(8*dims.O, 6), alpha=.1)
+fig, ax = plot_clusters(fitted_grid, hyperposterior=hyperposterior, figsize=(8*dims.O, 6), fig=fig, ax=ax)
+fig.suptitle("Fitted clusters (mean-processes) on the dataset")
 plt.show()
 
 #%% 8. Predict

@@ -42,6 +42,9 @@ from mimosa.hyperpost import Hyperpost  # Import example
 
 N.b.: notice the difference between `mimosa-ml` (the PyPI ID of the package) and `mimosa` (the internal package name).
 
+Python compatibility: mimosa is compatible with Python 3.10+. 
+We encourage using a more recent version to be compatible with latest releases of Jax and Equinox.
+
 ---
 ## Philosophy
 

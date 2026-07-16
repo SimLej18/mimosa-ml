@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mimosa-ml"
-version = "0.1.0"
+version = "v0.1.0-alpha"
 description = "MIMOSA: Multi-Input Multi-Output Sample Analysis - A fully-featured multi-task Gaussian process framework for analysing functional data."
 readme = "README.md"
 license = "MIT"

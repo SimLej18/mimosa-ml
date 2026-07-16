@@ -18,7 +18,7 @@ from mimosa.sampling import sample_gp
 from mimosa import DEFAULT_JITTER
 
 
-def generate_grid(G: int, n_dims: int, bounds: tuple[int, int]) -> Array:
+def generate_grid(G: int, n_dims: int, bounds: tuple[float, float]) -> Array:
 	"""
 	Build a regular grid spanning `bounds` in every dimension, with as close to `G` points as possible.
 
@@ -287,7 +287,7 @@ def generate_data(
 		parameters: Parameters,
 		config: ModelConfig,
 		priors: ParameterPriors | None = None,
-		input_range: tuple[int, int] = (-50, 50),
+		input_range: tuple[float, float] = (-50, 50),
 		jitter: Array = DEFAULT_JITTER
 ) -> tuple[Dataset, Grid, Hyperprior, Mixture, Parameters, Array, MultivariateNormal]:
 	"""

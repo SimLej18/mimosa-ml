@@ -382,7 +382,7 @@ def plot_single_cluster_single_output(
 			a.plot(x, post_mean, linestyle="-", color=color, **line_kwargs)
 			a.fill_between(x, post_mean - ci_scale * post_std, post_mean + ci_scale * post_std,
 							color=color, alpha=ci_alpha, linewidth=0)
-		a.set_title(f"cluster {k_id}, output {o_id}" + (f", feature {f}" if len(f_ids) > 1 else ""))
+		a.set_title(f"output {o_id}" + (f", feature {f}" if len(f_ids) > 1 else ""))
 		a.set_xlabel("input")
 		a.set_ylabel("output value")
 

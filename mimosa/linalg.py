@@ -3,10 +3,11 @@ Linear algebra and grid-indexing primitives used throughout the package: batched
 and lexicographic search over grid points.
 """
 
+import numpy as np
 import jax.numpy as jnp
 import jax.lax as jlx
 from jax import Array, jit, vmap
-from jax.lax import cond, while_loop
+from jax.lax import fori_loop
 
 from mimosa import DEFAULT_JITTER
 
@@ -72,10 +73,13 @@ def searchsorted_2d(vector: Array, matrix: Array) -> Array:
 	 [2, 1, 3],
 	 [2, 2, 1]]
 
+	Uses a fixed number of bisection steps (`fori_loop`, from `matrix`'s static shape) so this is jit- and vmap-compatible.
+
 	Parameters
 	----------
 	vector
-		Vector to search for.
+		Vector to search for. If it contains NaN in any component, `len(matrix)` is returned
+		unconditionally.
 	matrix
 		Matrix to search in.
 
@@ -83,50 +87,27 @@ def searchsorted_2d(vector: Array, matrix: Array) -> Array:
 	-------
 	Index of `vector` in `matrix`, or `len(matrix)` if not found.
 	"""
+	n = matrix.shape[0]
+	steps = int(np.ceil(np.log2(n))) + 1  # static (n is a shape, always a Python int) -> fori_loop-safe
 
-	@jit
-	def compare_vectors(v1, v2):
-		"""Compare two vectors lexicographically. Returns -1 if v1 < v2, 0 if equal, 1 if v1 > v2"""
-		diff = v1 - v2
-		# Find first non-zero element
-		nonzero_mask = diff != 0
-		# If all elements are zero, vectors are equal
-		first_nonzero_idx = jnp.argmax(nonzero_mask)
+	def lex_lt(a, b):
+		"""a < b, lexicographically; False if a == b."""
+		differs = a != b
+		i = jnp.argmax(differs)
+		return jnp.where(jnp.any(differs), a[i] < b[i], False)
 
-		return cond(
-			jnp.any(nonzero_mask),
-			lambda: jnp.array(jnp.sign(diff[first_nonzero_idx])).astype(int),
-			lambda: jnp.array(0).astype(int)
-		)
+	def body(_, lo_hi):
+		lo, hi = lo_hi
+		mid = (lo + hi) // 2
+		mid_lt_vector = lex_lt(matrix[mid], vector)
+		return jnp.where(mid_lt_vector, mid + 1, lo), jnp.where(mid_lt_vector, hi, mid)
 
-	@jit
-	def search_condition(state):
-		start, end, found = state
-		return (start < end) & (~found)
+	lo, _ = fori_loop(0, steps, body, (0, n))
 
-	@jit
-	def search_step(state):
-		start, end, found = state
-		mid = (start + end) // 2
-
-		comparison = compare_vectors(vector, matrix[mid])
-
-		# If vectors are equal, we found it
-		new_found = comparison == 0
-		new_start = cond(comparison < 0, lambda: start, lambda: mid + 1)
-		new_end = cond(comparison < 0, lambda: mid, lambda: end)
-
-		# If found, return the index in start position
-		final_start = cond(new_found, lambda: mid, lambda: new_start)
-
-		return final_start, new_end, new_found
-
-	# Initial state: (start, end, found)
-	initial_state = (0, len(matrix), False)
-	final_start, final_end, found = while_loop(search_condition, search_step, initial_state)
-
-	# Return the found index or len(matrix) if not found
-	return cond(found, lambda: final_start, lambda: len(matrix))
+	safe_idx = jnp.minimum(lo, n - 1)
+	found = (lo < n) & jnp.all(matrix[safe_idx] == vector)
+	result = jnp.where(found, lo, n)
+	return jnp.where(jnp.any(jnp.isnan(vector)), n, result)
 
 
 searchsorted_2d_vectorised = jit(vmap(searchsorted_2d, in_axes=(0, None)))
@@ -148,24 +129,24 @@ def lexicographic_sort(arr: Array) -> Array:
 	return arr[jnp.lexsort(arr.T[::-1])]
 
 
-def compute_mapping(grid: Array, element: Array) -> Array:
+def compute_mapping(grid: Array, points: Array) -> Array:
 	"""
-	Find the index of `element` in `grid`.
+	Find the indices of `points` in `grid`.
 
 	Parameters
 	----------
 	grid
-		Sorted grid points, of shape `(N,)` or `(N, I)`. If 2D, rows must be sorted lexicographically
+		Sorted grid points, of shape `(FG, I)`. If 2D, rows must be sorted lexicographically
 		(see `lexicographic_sort`).
-	element
-		Element(s) to search for, of shape matching `grid` minus its leading axis.
+	points
+		points to search for, of shape `(FN, I)`.
 
 	Returns
 	-------
-	Index of `element` in `grid`.
+	Indices of `points` in `grid`.
 	"""
 	if grid.shape[-1] == 1:
 		# We only have 1 input dimension, and we can use the fast jnp.searchsorted function
-		return jnp.searchsorted(grid.squeeze(axis=-1), element.squeeze(axis=-1))
+		return jnp.searchsorted(grid.squeeze(axis=-1), points.squeeze(axis=-1))
 	# Multiple input dimensions requires our custom lexicographic search
-	return searchsorted_2d_vectorised(element, grid)
+	return searchsorted_2d_vectorised(points, grid)

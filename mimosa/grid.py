@@ -3,7 +3,7 @@ Build grids of input points from task inputs, and map each task's inputs onto th
 """
 from abc import abstractmethod
 import jax.numpy as jnp
-from jax import Array
+from jax import Array, vmap
 import equinox as eqx
 
 from mimosa.linalg import compute_mapping, lexicographic_sort
@@ -39,7 +39,8 @@ class GridBuilder(eqx.Module):
         Parameters
         ----------
         inputs
-            Input points of every task.
+            Input points of every task. A point padding a variable-length task is NaN on every input
+            dimension, and must be excluded from the grid.
 
         Returns
         -------
@@ -57,7 +58,8 @@ class GridBuilder(eqx.Module):
         points
             Grid points to map `inputs` onto, as returned by `compute_points`.
         inputs
-            Input points of every task.
+            Input points of every task. A padding point (NaN on every input dimension) maps to
+            `len(points)`, i.e. strictly outside the grid.
 
         Returns
         -------
@@ -77,12 +79,14 @@ class UnionGrid(GridBuilder):
         Not jit-compatible: relies on `jnp.unique`, whose output shape depends on `inputs`' values,
         not just its shape.
         """
-        if inputs.shape[-1] == 1:
-            return jnp.sort(jnp.unique(inputs.reshape(-1)))[..., None]  # (G, 1)
-        return lexicographic_sort(jnp.unique(inputs.reshape(-1, inputs.shape[-1]), axis=0))
+        points = inputs.reshape(-1, inputs.shape[-1])
+        points = points[~jnp.any(jnp.isnan(points), axis=-1)]
+        if points.shape[-1] == 1:
+            return jnp.sort(jnp.unique(points.reshape(-1)))[..., None]  # (G, 1)
+        return lexicographic_sort(jnp.unique(points, axis=0))
 
     def compute_mappings(self, points: Array, inputs: Array, *args, **kwargs) -> Array:
         """
         See `GridBuilder.compute_mappings`.
         """
-        return compute_mapping(points, inputs)
+        return vmap(lambda task_inputs: compute_mapping(points, task_inputs))(inputs)

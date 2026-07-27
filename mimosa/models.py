@@ -8,6 +8,7 @@ import jax
 from jax import Array
 import equinox as eqx
 import optimistix as optx
+from jax_tqdm import loop_tqdm
 
 from mimosa.hyperpost import Hyperpost
 from mimosa.nll import ClusterNLL, TaskNLL
@@ -146,6 +147,7 @@ class BasicModel(AbstractModel):
         mixture = self.mixture_initialiser(dataset)
         mixture = Mixture(proportions=mixture_proportions, responsibilities=mixture.responsibilities)
 
+        @loop_tqdm(n_iter, desc=f"Training model for {n_iter} iterations:")
         def step(i, args):
             parameters, mixture = args
 

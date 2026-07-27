@@ -27,6 +27,7 @@ dependencies = [
     "numpy",
     "beartype",
     "jaxtyping",
+    "jax-tqdm",
 ]
 
 [project.urls]

@@ -86,7 +86,7 @@ from mimosa.sampling import sample_gp
 key = jr.PRNGKey(0)
 
 # 20 tasks, 2 clusters, 1D inputs/outputs, 25 points/task
-dims = Dimensions(T=20, K=2, I=1, O=1, F=1, N=25, G=50)
+dims = Dimensions(T=20, K=2, I=1, C=1, O=1, N=25, G=50)
 config = ModelConfig(isotopic_tasks=False)
 
 # Ground-truth parameters used to generate the synthetic dataset

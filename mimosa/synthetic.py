@@ -18,31 +18,55 @@ from mimosa.sampling import sample_gp
 from mimosa import DEFAULT_JITTER
 
 
-def generate_grid(G: int, n_dims: int, bounds: tuple[float, float]) -> Array:
+def generate_grid(dims: Dimensions, config: ModelConfig, bounds: list[tuple[float, float]]) -> Grid:
 	"""
 	Build a regular grid spanning `bounds` in every dimension, with as close to `G` points as possible.
 
 	Parameters
 	----------
-	G
-		Desired total number of grid points. The actual grid uses the number of points per input
-		dimension whose `n_dims`-th power is closest to `G`.
-	n_dims
-		Number of input dimensions.
+	dims
+		Dimensions of the dataset to generate, containing dims.G, dims.I and dims.O.
+	config
+		Model configuration, used for its `isotopic_outputs_in_grid` field when dims.F > 1.
 	bounds
 		Min and max value of the grid, applied to every dimension.
 
 	Returns
 	-------
-	Grid points. Shape `(grid_size ** n_dims, n_dims)`.
+	A Grid instance with no mappings.
+	The grid points. shape `(~G, I)` if isotopic_outputs_in_grid and (O * ~G, I) otherwise, where ~G is the first power of dims.I above or equal to `G`.
 	"""
-	grid_size = max(round(G ** (1 / n_dims)), 1)
-	axis = jnp.linspace(bounds[0], bounds[1], grid_size)
-	grids = jnp.meshgrid(*([axis] * n_dims), indexing='ij')
-	return jnp.stack(grids, axis=-1).reshape(-1, n_dims)
+	if config.isotopic_output_in_grid and len(bounds) > 1:
+		raise ValueError(f"Cannot have different output bounds for isotopic outputs grid.")
+	if not config.isotopic_output_in_grid and len(bounds) != dims.O:
+		raise ValueError(f"Cannot build heterotopic grid for {dims.O} outputs with only {len(bounds)} bounds.")
+
+	grid_size = max(round(dims.G ** (1 / dims.I)), 1)
+
+	def output_grid(output_bounds: tuple[float, float]) -> Array:
+		axis = jnp.linspace(output_bounds[0], output_bounds[1], grid_size)
+		grids = jnp.meshgrid(*([axis] * dims.I), indexing='ij')
+		return jnp.stack(grids, axis=-1).reshape(-1, dims.I)
+
+	full_grid = jnp.concat([output_grid(b) for b in bounds], axis=0)
+
+	if config.isotopic_output_in_grid:
+		return Grid(
+			points = full_grid,
+			mappings = None,
+			output_ids = None
+		)
+
+	output_ids = jnp.repeat(jnp.arange(len(bounds)), grid_size**dims.I)
+
+	return Grid(
+		points = full_grid,
+		mappings = None,
+		output_ids = output_ids
+	)
 
 
-def sample_inputs(key: Array, grid: Array, dims: Dimensions, config: ModelConfig) -> tuple[Array, Array]:
+def sample_inputs(key: Array, grid: Grid, dims: Dimensions, config: ModelConfig) -> tuple[Array, None | Array, Array]:
 	"""
 	Sample `dims.N` input points per task (or per feature) from `grid`, without replacement, and
 	compute each sampled point's index (mapping) in `grid`.
@@ -65,25 +89,72 @@ def sample_inputs(key: Array, grid: Array, dims: Dimensions, config: ModelConfig
 	-------
 	inputs
 		Sampled input points.
+	output_ids
+		Output ids of each input point.
 	mappings
 		Index of each sampled point in `grid`.
 	"""
-	if config.isotopic_tasks:
-		if config.isotopic_features:
-			inputs = jr.choice(key, grid, (dims.N,), replace=False)[None, ...]
-			mappings = compute_mapping(grid, inputs[0])[None, ...]
+	output_mapping_offset = jnp.repeat(jnp.arange(dims.O), dims.N) * dims.G
+
+	if config.isotopic_output_in_grid:
+		if config.isotopic_output_in_tasks:
+			output_ids = None
+			if config.isotopic_tasks:
+				# Sample inputs once and broadcast to every task
+				inputs = jr.choice(key, grid.points, (dims.N,), replace=False)[None, ...]
+				mappings = compute_mapping(grid.points, inputs[0])[None, ...]
+
+			else:
+				# Vmap on multiple PRNG keys to sample distinct inputs for every task
+				inputs = vmap(lambda k: jr.choice(k, grid.points, (dims.N,), replace=False))(jr.split(key, dims.T))
+				mappings = vmap(lambda i: compute_mapping(grid.points, i))(inputs)
+
+			if dims.O > 1:
+				mappings = (jnp.tile(mappings, dims.O) + output_mapping_offset)
+
 		else:
-			inputs = vmap(lambda k: jr.choice(k, grid, (dims.N,), replace=False))(jr.split(key, dims.F))
-			mappings = vmap(lambda i: compute_mapping(grid, i))(inputs)
+			if dims.O == 1:
+				raise ValueError("Cannot have heterotopic outputs with only one output.")
+
+			output_ids = jnp.repeat(jnp.arange(dims.O, dtype=int), dims.N)
+
+			if config.isotopic_tasks:
+				# Vmap on multiple PRNG keys to sample distinct inputs for each output, then broadcast to every task
+				inputs = vmap(lambda k: jr.choice(k, grid.points, (dims.N,), replace=False))(jr.split(key, dims.O))
+				mappings = vmap(lambda i: compute_mapping(grid.points, i))(inputs)
+
+				inputs = inputs.reshape(dims.N * dims.O, dims.I)
+				mappings = mappings.reshape(dims.N * dims.O) + output_mapping_offset
+
+			else:
+				inputs = vmap(lambda k: jr.choice(k, grid.points, (dims.N,), replace=False))(jr.split(key, dims.T * dims.O))
+				mappings = vmap(lambda i: compute_mapping(grid.points, i))(inputs)
+
+				inputs = inputs.reshape(dims.T, dims.N * dims.O, dims.I)
+				mappings = mappings.reshape(dims.T, dims.N * dims.O) + output_mapping_offset
+
+
+
 	else:
-		# FIXME: in multi-features, inputs should be concatenated, not stacked
-		if config.isotopic_features:
-			inputs = vmap(lambda k: jr.choice(k, grid, (dims.N,), replace=False))(jr.split(key, dims.T))
-			mappings = vmap(lambda i: compute_mapping(grid, i))(inputs)
+		if config.isotopic_output_in_tasks:
+			raise ValueError(f"Cannot have heterotopic task inputs for each output sampled from an isotopic grid.")
 		else:
-			inputs = vmap(lambda k1: vmap(lambda k2: jr.choice(k2, grid, (dims.N,), replace=False))(jr.split(k1, dims.F)))(jr.split(key, dims.T))
-			mappings = vmap(vmap(lambda i: compute_mapping(grid, i)))(inputs)
-	return inputs, mappings
+
+			output_ids = jnp.repeat(jnp.arange(dims.O, dtype=int), dims.N)
+
+			if config.isotopic_tasks:
+				mappings = vmap(lambda k: jr.choice(k, jnp.arange(dims.G), (dims.N,), replace=False))(
+					jr.split(key, dims.O))
+				mappings = mappings.reshape(dims.N * dims.O) + output_mapping_offset
+				inputs = grid.points[mappings][None, ...]  # Broadcast to every tasks
+
+			else:
+				mappings = vmap(lambda k: jr.choice(k, jnp.arange(dims.G), (dims.N,), replace=False))(
+					jr.split(key, dims.O * dims.T))
+				mappings = (mappings.reshape(dims.T, dims.N * dims.O) + output_mapping_offset).reshape(dims.T, dims.O * dims.N)
+				inputs = grid.points[mappings]
+
+	return inputs, output_ids, mappings
 
 
 def build_mean(
@@ -110,8 +181,8 @@ def build_mean(
 	Batched mean function, with independent hyperparameters per output/mean-process where configured.
 	"""
 	# multi-output HPs
-	if not config.shared_output_hps:
-		mean = BatchModule(mean, batch_size=dims.O, batch_in_axes=0, batch_over_inputs=False)
+	if not config.shared_channel_hps:
+		mean = BatchModule(mean, batch_size=dims.C, batch_in_axes=0, batch_over_inputs=False)
 	else:
 		mean = BatchModule(mean, batch_size=1, batch_in_axes=None, batch_over_inputs=False)
 
@@ -149,9 +220,9 @@ def build_mean_kernel(
 	-------
 	Batched kernel, with independent hyperparameters per output/mean-process where configured.
 	"""
-	# multi-output HPs
-	if not config.shared_output_hps:
-		mean_kernel = BatchModule(mean_kernel, batch_size=dims.O, batch_in_axes=0, batch_over_inputs=False)
+	# multi-channel HPs
+	if not config.shared_channel_hps:
+		mean_kernel = BatchModule(mean_kernel, batch_size=dims.C, batch_in_axes=0, batch_over_inputs=False)
 	else:
 		mean_kernel = BatchModule(mean_kernel, batch_size=1, batch_in_axes=None, batch_over_inputs=False)
 
@@ -191,8 +262,8 @@ def build_task_kernel(
 	Batched kernel, with independent hyperparameters per output/mean-process/task where configured.
 	"""
 	# multi-output HPs
-	if not config.shared_output_hps:
-		task_kernel = BatchModule(task_kernel, batch_size=dims.O, batch_in_axes=0, batch_over_inputs=False)
+	if not config.shared_channel_hps:
+		task_kernel = BatchModule(task_kernel, batch_size=dims.C, batch_in_axes=0, batch_over_inputs=False)
 	else:
 		task_kernel = BatchModule(task_kernel, batch_size=1, batch_in_axes=None, batch_over_inputs=False)
 
@@ -207,7 +278,7 @@ def build_task_kernel(
 		if config.isotopic_tasks:
 			task_kernel = BatchModule(task_kernel, batch_size=1, batch_in_axes=None, batch_over_inputs=False)
 		else:
-			task_kernel = BatchModule(task_kernel, batch_size=1, batch_in_axes=None, batch_over_inputs=True)
+			task_kernel = BatchModule(task_kernel, batch_size=dims.T, batch_in_axes=None, batch_over_inputs=True)
 	else:
 		if config.isotopic_tasks:
 			task_kernel = BatchModule(task_kernel, batch_size=dims.T, batch_in_axes=0, batch_over_inputs=False)
@@ -287,7 +358,7 @@ def generate_data(
 		parameters: Parameters,
 		config: ModelConfig,
 		priors: ParameterPriors | None = None,
-		input_range: tuple[float, float] = (-50, 50),
+		input_range: None | list[tuple[float, float]] = None,
 		jitter: Array = DEFAULT_JITTER
 ) -> tuple[Dataset, Grid, Hyperprior, Mixture, Parameters, Array, MultivariateNormal]:
 	"""
@@ -308,7 +379,7 @@ def generate_data(
 		Min/max bounds for each parameter of `parameters`, used to sample its hyperparameters.
 		If None, hyperparameters are left unchanged.
 	input_range
-		Min and max value for input points, applied to every input dimension.
+		Min and max value for input points of every output. Applied to every input dimension. Default is (-50, 50) for every output.
 	jitter
 		Diagonal jitter added before Cholesky factorizations, for numerical stability.
 
@@ -331,15 +402,30 @@ def generate_data(
 
 	Notes
 	-----
-	Multi-feature (`dims.F > 1`) generation is not yet supported.
+	When `dims.I > 1` (aka multi-dimensional inputs), `len(grid.points)` is not guaranteed to be the provided `dims.G`.
+	This is because we use a regular mesh-grid with the same number of points along each dimension. For example, if you
+	want G=90 grid points on a 2D plane, you will actually obtain a grid with 9*9 = 81 points. For this reason, we recommend
+	setting `dims.G` to "some integer to the power of `dims.I`" to get the exact expected grid length.
 	"""
-	# TODO: adapt for multi-feature
+	if input_range is None:
+		if config.isotopic_output_in_grid:
+			input_range = [(-50, 50)]
+		else:
+			input_range = [(-50, 50) for _ in range(dims.O)]
+
+	if dims.I > 1:
+		grid_size = max(round(dims.G ** (1 / dims.I)), 1)
+		if grid_size ** dims.I != dims.G:
+			raise ValueError(
+				f"dims.G={dims.G} is not an integer to the power of dims.I={dims.I}. "
+				f"Closest valid values are {grid_size ** dims.I} and {(grid_size + 1) ** dims.I}."
+			)
 	
 	# Step 1: generate the grid
-	grid = generate_grid(dims.G, dims.I, input_range)  # Shape (G, I) where G = grid_size**I
+	grid = generate_grid(dims, config, input_range)
 
 	# Step 2: sample the input grid
-	inputs, mappings = sample_inputs(key, grid, dims, config)  # Varying shapes
+	inputs, output_ids, mappings = sample_inputs(key, grid, dims, config)  # Varying shapes
 
 	# Step 3: batch kernels
 	parameters = build_parameters(parameters, dims, config)
@@ -350,14 +436,10 @@ def generate_data(
 		parameters = sample_parameters_from_priors(subkey, parameters, priors)
 
 	# Step 5: sample mean processes for each cluster from the mean and mean kernel, evaluated on the grid
-	# Adapt grid if we are in multi-feature and features don't share inputs, to create a separate grid for each feature
-	if not config.isotopic_features:
-		grid = jnp.tile(grid, (dims.F,) + (1,) * grid.ndim)  # Shape (F*G, I)
-
 	# mean has shape (K, O, F*G), cov has shape (K, O, F*G, F*G)
-	hyperprior = Hyperprior(mean=parameters.cluster_mean(grid), covariance=parameters.cluster_kernel(grid))
+	hyperprior = Hyperprior(mean=parameters.cluster_mean(grid.points, output_ids=grid.output_ids), covariance=parameters.cluster_kernel(grid.points, output_ids=output_ids))
 
-	if config.shared_output_hps:
+	if config.shared_channel_hps:
 		sample_outputs = vmap(lambda k, m, c: sample_gp(k, m[0], c[0], jitter=jitter), in_axes=(0, None, None))
 		if config.shared_cluster_hps:
 			sample_clusters = vmap(lambda k, m, c: sample_outputs(k, m[0], c[0]), in_axes=(0, None, None))
@@ -370,7 +452,7 @@ def generate_data(
 		else:
 			sample_clusters = vmap(lambda k, m, c: sample_outputs(k, m, c), in_axes=(0, 0, 0))
 	key, subkey = jr.split(key)
-	subkeys = jr.split(subkey, (dims.K, dims.O))
+	subkeys = jr.split(subkey, (dims.K, dims.C))
 
 	cluster_means = sample_clusters(subkeys, hyperprior.mean, hyperprior.covariance)  # Shape (K, O, F*G)
 
@@ -387,9 +469,9 @@ def generate_data(
 		task_means = vmap(lambda t_m, m: t_m[:, m], in_axes=(0, 0))(task_means_on_grid, mappings)  # Shape (T, O, F*N)
 
 	if config.isotopic_tasks:
-		task_covs = parameters.task_kernel(inputs[0]) + parameters.noise_kernel(inputs[0])
+		task_covs = parameters.task_kernel(inputs[0], output_ids=output_ids) + parameters.noise_kernel(inputs[0], output_ids=output_ids)
 	else:
-		task_covs = parameters.task_kernel(inputs) + parameters.noise_kernel(inputs)
+		task_covs = parameters.task_kernel(inputs, output_ids=output_ids) + parameters.noise_kernel(inputs, output_ids=output_ids)
 	# Shape (T, K, O, F*N, F*N), with T=1 if shared_task_hps, K=1 if not cluster_specific_task_hps and O=1 if shared_output_hps
 
 	if config.cluster_specific_task_hps:
@@ -400,7 +482,7 @@ def generate_data(
 
 	tasks = MultivariateNormal(mean=task_means, covariance=task_covs)
 
-	if config.shared_output_hps:
+	if config.shared_channel_hps:
 		sample_outputs = vmap(lambda k, m, c: sample_gp(k, m, c[0], jitter=jitter), in_axes=(0, 0, None))
 		if config.isotopic_tasks and config.shared_task_hps:
 			sample_tasks = vmap(lambda k, m, c: sample_outputs(k, m, c[0]), in_axes=(0, 0, None))
@@ -413,12 +495,12 @@ def generate_data(
 		else:
 			sample_tasks = vmap(lambda k, m, c: sample_outputs(k, m, c), in_axes=(0, 0, 0))
 	key, subkey = jr.split(key)
-	subkeys = jr.split(subkey, (dims.T, dims.O))
+	subkeys = jr.split(subkey, (dims.T, dims.C))
 
 	outputs = sample_tasks(subkeys, task_means, task_covs).mT  # Shape (T, F*N, O)
 
 	dataset = Dataset(inputs=inputs, outputs=outputs)
-	grid = Grid(points=grid, mappings=mappings)
+	grid = Grid(points=grid.points, mappings=mappings, output_ids=grid.output_ids)
 
 	return dataset, grid, hyperprior, mixture, parameters, cluster_means, tasks
 

@@ -1,21 +1,25 @@
 """
 Plotting utilities for mimosa-ml, using matplotlib with a seaborn-style theme.
 
-Composable plotting functions for Dataset points (`plot_output`/`plot_task`/`plot_dataset`),
-mean-processes (`plot_single_cluster_single_output`/`plot_single_cluster`/`plot_clusters`), and
+Composable plotting functions for Dataset points (`plot_channel`/`plot_task`/`plot_dataset`),
+mean-processes (`plot_single_cluster_single_channel`/`plot_single_cluster`/`plot_clusters`), and
 per-task predictions (`plot_single_task_prediction`).
 
 Convention
 ----------
-Subplots: columns = outputs (`O`), rows = features (`F`, left at 1 for now since multi-feature
-generation isn't supported yet). Every plotting function accepts optional `fig`/`ax` so plots can
-be composed into larger figures (see `_get_fig_ax`). Selector arguments (`t_id`, `k_id`, `o_id`,
-`f_id`) pick a single task/cluster/output/feature index (int), or "all" (default) to plot every one.
+Subplots: columns = channels (`C`), rows = outputs (`O`). Every plotting function takes the
+dataset's `Dimensions` explicitly (`dims`), used to resolve "all" selectors and to slice the
+`O*N`/`O*G` block-major arrays (`Dataset.outputs`, `Grid.points`, `Hyperprior`/`Hyperposterior`
+mean/covariance, `prediction`/`samples`) down to a single output's block -- see
+`mimosa.synthetic.sample_inputs`/`generate_grid` and kernax's multi-output Mean/Kernel classes for
+the block-major convention itself. Every plotting function also accepts optional `fig`/`ax` so
+plots can be composed into larger figures (see `_get_fig_ax`). Selector arguments (`t_id`, `k_id`,
+`c_id`, `o_id`) pick a single task/cluster/channel/output index (int), or "all" (default) to plot
+every one.
 
 Limitations
 -----------
-Only 1D inputs (`I == 1`) and single-feature datasets (`F == 1`) are supported, matching the current
-limitations of `mimosa.synthetic.generate_data`.
+Only 1D inputs (`I == 1`) are supported.
 """
 
 from __future__ import annotations
@@ -26,20 +30,19 @@ import matplotlib.pyplot as plt
 import numpy as np
 from jax import Array
 
-from mimosa.data_structures import Dataset, Grid, Hyperposterior, Hyperprior, Mixture, MultivariateNormal
+from mimosa.data_structures import Dataset, Dimensions, Grid, Hyperposterior, Hyperprior, Mixture, MultivariateNormal
 
 plt.style.use("seaborn-v0_8-whitegrid")
 
 
 IdArg = int | Literal["all"]
 
-_F = 1  # multi-feature not supported yet in generate_data; F is always 1
 _DEFAULT_SCATTER_KWARGS = {"s": 15, "alpha": 0.7}
 
 
 def _resolve_ids(id_arg: IdArg, size: int) -> list[int]:
 	"""
-	Resolve a t_id/k_id/o_id/f_id argument into a list of indices: every index if "all",
+	Resolve a t_id/k_id/c_id/o_id argument into a list of indices: every index if "all",
 	or a single-element list if an int.
 	"""
 	if id_arg == "all":
@@ -74,37 +77,57 @@ def _get_fig_ax(fig, ax, nrows: int, ncols: int, figsize: tuple[float, float] | 
 	return fig, ax
 
 
-def _mvn_dims(hyperprior, hyperposterior) -> tuple[int, int]:
+def _output_rows(output_ids, o_id: int, block_size: int) -> np.ndarray | slice:
 	"""
-	Infer the true `(K, O)` of a mean-process distribution from whichever of `hyperprior`/
-	`hyperposterior` is given. Prefers `hyperposterior`: `hyperprior` may collapse a batch axis to
-	1 under shared hyperparameters (broadcast, see `_mvn_cell`), while `hyperposterior` (e.g. from
-	`mimosa.hyperpost.hyperpost`) is always fully expanded.
+	Row indices belonging to output `o_id` in an `output_ids`-labelled array (if given), or the
+	`o_id`-th of `dims.O` contiguous blocks of `block_size` rows (output-major), if `output_ids`
+	is `None` -- the convention used throughout `mimosa.synthetic` (`sample_inputs`/`generate_grid`)
+	and by kernax's multi-output Mean/Kernel classes when called without their own `output_ids`.
 	"""
-	ref = hyperposterior if hyperposterior is not None else hyperprior
-	return ref.mean.shape[0], ref.mean.shape[1]
+	if output_ids is not None:
+		return np.flatnonzero(np.asarray(output_ids) == o_id)
+	return slice(o_id * block_size, (o_id + 1) * block_size)
 
 
-def _mvn_cell(obj, k_id: int, o_id: int):
+def _task_xy(dataset: Dataset, dims: Dimensions, t_id: int, c_id: int, o_id: int):
 	"""
-	Index a Hyperprior/Hyperposterior's `(K, O, ...)` mean/covariance at `(k_id, o_id)`,
-	broadcasting any axis of size 1 (shared hyperparameters) to index 0 instead.
+	Extract a single task's observed `(x, y)` points for a single channel and output, as numpy
+	arrays with missing (NaN) points already dropped.
 	"""
-	k = k_id if obj.mean.shape[0] > 1 else 0
-	o = o_id if obj.mean.shape[1] > 1 else 0
-	return obj.mean[k, o], obj.covariance[k, o]
+	t = 0 if dataset.inputs.shape[0] == 1 else t_id
+	# `inputs` has dims.N rows if every output shares this task's input locations
+	# (isotopic_output_in_tasks), dims.O * dims.N rows otherwise.
+	in_rows = slice(None) if dataset.inputs.shape[1] == dims.N else _output_rows(dataset.output_ids, o_id, dims.N)
+	x = np.asarray(dataset.inputs[t, in_rows, 0])
 
+	out_rows = _output_rows(dataset.output_ids, o_id, dims.N)
+	y = np.asarray(dataset.outputs[t_id, out_rows, c_id])
 
-def _task_xy(dataset: Dataset, t_id: int, o_id: int):
-	"""
-	Extract a single task's observed `(x, y)` points for a single output, as numpy arrays with
-	missing (NaN) points already dropped.
-	"""
-	# inputs shape (#T, N, 1), #T is 1 (isotopic tasks) or T
-	x = np.asarray(dataset.inputs[0 if dataset.inputs.shape[0] == 1 else t_id, :, 0])
-	y = np.asarray(dataset.outputs[t_id, :, o_id])
 	mask = ~np.isnan(y)
 	return x[mask], y[mask]
+
+
+def _grid_x(grid: Grid, dims: Dimensions, o_id: int):
+	"""
+	Extract a single output's grid input locations as a 1D numpy array (only 1D inputs, `I == 1`,
+	supported). `grid.points` has `dims.G` rows if every output shares grid locations
+	(isotopic_output_in_grid), `dims.O * dims.G` rows otherwise.
+	"""
+	rows = slice(None) if grid.points.shape[0] == dims.G else _output_rows(grid.output_ids, o_id, dims.G)
+	return np.asarray(grid.points[rows, 0])
+
+
+def _mvn_cell(obj, dims: Dimensions, k_id: int, c_id: int, o_id: int):
+	"""
+	Index a Hyperprior/Hyperposterior's `(K, C, O*G)`/`(K, C, O*G, O*G)` mean/covariance at
+	`(k_id, c_id)`, broadcasting any axis of size 1 (shared hyperparameters) to index 0 instead,
+	then slice out the `o_id`-th `G`-sized output block (block-major convention, see
+	`mimosa.synthetic.generate_data` and kernax's multi-output Mean/Kernel classes).
+	"""
+	k = k_id if obj.mean.shape[0] > 1 else 0
+	c = c_id if obj.mean.shape[1] > 1 else 0
+	rows = slice(o_id * dims.G, (o_id + 1) * dims.G)
+	return obj.mean[k, c, rows], obj.covariance[k, c, rows, rows]
 
 
 def _cluster_palette(K: int) -> list:
@@ -117,11 +140,12 @@ def _cluster_palette(K: int) -> list:
 	return [cmap(k % cmap.N) for k in range(K)]
 
 
-def plot_output(
+def plot_channel(
 	dataset: Dataset,
+	dims: Dimensions,
 	t_id: int,
-	o_id: int,
-	f_id: IdArg = "all",
+	c_id: int,
+	o_id: IdArg = "all",
 	fig=None,
 	ax=None,
 	figsize: tuple[float, float] | None = None,
@@ -129,25 +153,26 @@ def plot_output(
 	**scatter_kwargs,
 ):
 	"""
-	Scatter-plot a single task's observed points for a single output, one subplot per feature.
+	Scatter-plot a single task's observed points for a single channel, one subplot per output.
 
 	x-axis is the input value (only 1D inputs, `I == 1`, are supported for now), y-axis is the
-	output value.
+	channel value.
 
 	Parameters
 	----------
 	dataset
 		Dataset to plot, as returned by `generate_data`.
+	dims
+		Dimensions of `dataset`, used to resolve `o_id="all"` and to slice its `O*N`-row arrays.
 	t_id
 		Index of the task to plot.
+	c_id
+		Index of the channel to plot.
 	o_id
-		Index of the output to plot.
-	f_id
-		"all" (default) or int, restrict the plot to a single feature. Has no effect yet since
-		multi-feature datasets aren't supported (F is always 1).
+		"all" (default) or int, restrict the plot to a single output.
 	fig, ax
 		Existing figure/axes to draw on, to combine with other plots. If given, `ax` must already
-		have shape `(len(f_id), 1)`. A new figure/axes grid is created if None.
+		have shape `(len(o_id), 1)`. A new figure/axes grid is created if None.
 	figsize
 		Passed to `plt.subplots` when a new figure is created.
 	color
@@ -158,34 +183,34 @@ def plot_output(
 	Returns
 	-------
 	fig, ax
-		The (possibly newly created) figure and 2D array of axes, shape `(len(f_id), 1)`.
+		The (possibly newly created) figure and 2D array of axes, shape `(len(o_id), 1)`.
 	"""
 	if dataset.inputs.shape[-1] != 1:
-		raise NotImplementedError("plot_output only supports 1D inputs (I=1) for now.")
+		raise NotImplementedError("plot_channel only supports 1D inputs (I=1) for now.")
 
-	f_ids = _resolve_ids(f_id, _F)
+	o_ids = _resolve_ids(o_id, dims.O)
 
-	fig, ax = _get_fig_ax(fig, ax, len(f_ids), 1, figsize=figsize)
-
-	x, y = _task_xy(dataset, t_id, o_id)
+	fig, ax = _get_fig_ax(fig, ax, len(o_ids), 1, figsize=figsize)
 
 	kwargs = _DEFAULT_SCATTER_KWARGS | scatter_kwargs
 
-	for row, f in enumerate(f_ids):
+	for row, o in enumerate(o_ids):
+		x, y = _task_xy(dataset, dims, t_id, c_id, o)
 		a = ax[row, 0]
 		a.scatter(x, y, color=color, **kwargs)
-		a.set_title(f"output {o_id}" + (f", feature {f}" if len(f_ids) > 1 else ""))
+		a.set_title(f"channel {c_id}" + (f", output {o}" if len(o_ids) > 1 else ""))
 		a.set_xlabel("input")
-		a.set_ylabel("output value")
+		a.set_ylabel("channel value")
 
 	return fig, ax
 
 
 def plot_task(
 	dataset: Dataset,
+	dims: Dimensions,
 	t_id: int,
+	c_id: IdArg = "all",
 	o_id: IdArg = "all",
-	f_id: IdArg = "all",
 	fig=None,
 	ax=None,
 	figsize: tuple[float, float] | None = None,
@@ -193,20 +218,21 @@ def plot_task(
 	**scatter_kwargs,
 ):
 	"""
-	Scatter-plot a single task's observed points, looping `plot_output` over outputs.
+	Scatter-plot a single task's observed points, looping `plot_channel` over channels.
 
 	Parameters
 	----------
 	dataset
 		Dataset to plot, as returned by `generate_data`.
+	dims
+		Dimensions of `dataset`, used to resolve `c_id`/`o_id="all"` and to slice its block-major arrays.
 	t_id
 		Index of the task to plot.
-	o_id, f_id
-		"all" (default) or int, restrict the plot to a single output/feature. `f_id` has no effect
-		yet since multi-feature datasets aren't supported (F is always 1).
+	c_id, o_id
+		"all" (default) or int, restrict the plot to a single channel/output.
 	fig, ax
 		Existing figure/axes to draw on, to combine with other plots. If given, `ax` must already
-		have shape `(len(f_id), len(o_id))`. A new figure/axes grid is created if None.
+		have shape `(len(o_id), len(c_id))`. A new figure/axes grid is created if None.
 	figsize
 		Passed to `plt.subplots` when a new figure is created.
 	color
@@ -217,27 +243,26 @@ def plot_task(
 	Returns
 	-------
 	fig, ax
-		The (possibly newly created) figure and 2D array of axes, shape `(len(f_id), len(o_id))`.
+		The (possibly newly created) figure and 2D array of axes, shape `(len(o_id), len(c_id))`.
 	"""
-	O = dataset.outputs.shape[-1]
+	c_ids = _resolve_ids(c_id, dims.C)
+	o_ids = _resolve_ids(o_id, dims.O)
 
-	o_ids = _resolve_ids(o_id, O)
-	f_ids = _resolve_ids(f_id, _F)
+	fig, ax = _get_fig_ax(fig, ax, len(o_ids), len(c_ids), figsize=figsize)
 
-	fig, ax = _get_fig_ax(fig, ax, len(f_ids), len(o_ids), figsize=figsize)
-
-	for col, o in enumerate(o_ids):
-		plot_output(dataset, t_id, o, f_id=f_id, fig=fig, ax=ax[:, col:col + 1], color=color, **scatter_kwargs)
+	for col, c in enumerate(c_ids):
+		plot_channel(dataset, dims, t_id, c, o_id=o_id, fig=fig, ax=ax[:, col:col + 1], color=color, **scatter_kwargs)
 
 	return fig, ax
 
 
 def plot_dataset(
 	dataset: Dataset,
+	dims: Dimensions,
 	mixture: Mixture | None = None,
 	t_id: IdArg = "all",
+	c_id: IdArg = "all",
 	o_id: IdArg = "all",
-	f_id: IdArg = "all",
 	fig=None,
 	ax=None,
 	figsize: tuple[float, float] | None = None,
@@ -252,14 +277,16 @@ def plot_dataset(
 	----------
 	dataset
 		Dataset to plot, as returned by `generate_data`.
+	dims
+		Dimensions of `dataset`, used to resolve `t_id`/`c_id`/`o_id="all"` and to slice its
+		block-major arrays.
 	mixture
 		Cluster assignments used to color tasks. If None, every task shares one color.
-	t_id, o_id, f_id
-		"all" (default) or int, restrict the plot to a single task/output/feature. `f_id` has no
-		effect yet since multi-feature datasets aren't supported (F is always 1).
+	t_id, c_id, o_id
+		"all" (default) or int, restrict the plot to a single task/channel/output.
 	fig, ax
 		Existing figure/axes to draw on, to combine with other plots. If given, `ax` must already
-		have shape `(len(f_id), len(o_id))`. A new figure/axes grid is created if None.
+		have shape `(len(o_id), len(c_id))`. A new figure/axes grid is created if None.
 	figsize
 		Passed to `plt.subplots` when a new figure is created.
 	legend
@@ -270,15 +297,13 @@ def plot_dataset(
 	Returns
 	-------
 	fig, ax
-		The (possibly newly created) figure and 2D array of axes, shape `(len(f_id), len(o_id))`.
+		The (possibly newly created) figure and 2D array of axes, shape `(len(o_id), len(c_id))`.
 	"""
-	T, _, O = dataset.outputs.shape
+	t_ids = _resolve_ids(t_id, dims.T)
+	c_ids = _resolve_ids(c_id, dims.C)
+	o_ids = _resolve_ids(o_id, dims.O)
 
-	t_ids = _resolve_ids(t_id, T)
-	o_ids = _resolve_ids(o_id, O)
-	f_ids = _resolve_ids(f_id, _F)
-
-	fig, ax = _get_fig_ax(fig, ax, len(f_ids), len(o_ids), figsize=figsize)
+	fig, ax = _get_fig_ax(fig, ax, len(o_ids), len(c_ids), figsize=figsize)
 
 	if mixture is None:
 		colors = {t: "C0" for t in t_ids}
@@ -294,7 +319,7 @@ def plot_dataset(
 		]
 
 	for t in t_ids:
-		plot_task(dataset, t, o_id=o_id, f_id=f_id, fig=fig, ax=ax, color=colors[t], **scatter_kwargs)
+		plot_task(dataset, dims, t, c_id=c_id, o_id=o_id, fig=fig, ax=ax, color=colors[t], **scatter_kwargs)
 
 	if legend and handles:
 		fig.legend(handles=handles, loc="outside right center")
@@ -302,13 +327,14 @@ def plot_dataset(
 	return fig, ax
 
 
-def plot_single_cluster_single_output(
+def plot_single_cluster_single_channel(
 	grid: Grid,
+	dims: Dimensions,
 	k_id: int,
-	o_id: int,
+	c_id: int,
 	hyperprior: Hyperprior | None = None,
 	hyperposterior: Hyperposterior | None = None,
-	f_id: IdArg = "all",
+	o_id: IdArg = "all",
 	fig=None,
 	ax=None,
 	figsize: tuple[float, float] | None = None,
@@ -318,8 +344,8 @@ def plot_single_cluster_single_output(
 	**line_kwargs,
 ):
 	"""
-	Plot a single mean-process's values at the grid points, for a single output, one subplot per
-	feature: `hyperprior.mean` as a dashed line, `hyperposterior.mean` as a solid line, and a
+	Plot a single mean-process's values at the grid points, for a single channel, one subplot per
+	output: `hyperprior.mean` as a dashed line, `hyperposterior.mean` as a solid line, and a
 	confidence interval shaded from the diagonal of `hyperposterior.covariance`.
 
 	Parameters
@@ -327,22 +353,24 @@ def plot_single_cluster_single_output(
 	grid
 		Grid of points the mean-process is evaluated at (only 1D inputs, `I == 1`, supported for
 		now). x-axis of the plot.
+	dims
+		Dimensions of the dataset `grid`/`hyperprior`/`hyperposterior` were generated/fitted from,
+		used to resolve `o_id="all"` and to slice their block-major arrays.
 	k_id
 		Index of the mean-process (cluster) to plot.
-	o_id
-		Index of the output to plot.
+	c_id
+		Index of the channel to plot.
 	hyperprior
-		Prior distribution over the mean-process's grid values, shape `(K, O, F*G)`/`(K, O, F*G, F*G)`.
+		Prior distribution over the mean-process's grid values, shape `(K, C, O*G)`/`(K, C, O*G, O*G)`.
 		Plotted as a dashed line if given; skipped otherwise.
 	hyperposterior
 		Posterior distribution over the mean-process's grid values, same shape as `hyperprior`.
 		Plotted as a solid line with a shaded confidence interval if given; skipped otherwise.
-	f_id
-		"all" (default) or int, restrict the plot to a single feature. Has no effect yet since
-		multi-feature datasets aren't supported (F is always 1).
+	o_id
+		"all" (default) or int, restrict the plot to a single output.
 	fig, ax
 		Existing figure/axes to draw on, to combine with other plots. If given, `ax` must already
-		have shape `(len(f_id), 1)`. A new figure/axes grid is created if None.
+		have shape `(len(o_id), 1)`. A new figure/axes grid is created if None.
 	figsize
 		Passed to `plt.subplots` when a new figure is created.
 	color
@@ -357,45 +385,45 @@ def plot_single_cluster_single_output(
 	Returns
 	-------
 	fig, ax
-		The (possibly newly created) figure and 2D array of axes, shape `(len(f_id), 1)`.
+		The (possibly newly created) figure and 2D array of axes, shape `(len(o_id), 1)`.
 	"""
 	if hyperprior is None and hyperposterior is None:
 		raise ValueError("At least one of hyperprior/hyperposterior must be given.")
 	if grid.points.shape[-1] != 1:
-		raise NotImplementedError("plot_single_cluster_single_output only supports 1D inputs (I=1) for now.")
+		raise NotImplementedError("plot_single_cluster_single_channel only supports 1D inputs (I=1) for now.")
 
-	f_ids = _resolve_ids(f_id, _F)
+	o_ids = _resolve_ids(o_id, dims.O)
 
-	fig, ax = _get_fig_ax(fig, ax, len(f_ids), 1, figsize=figsize)
+	fig, ax = _get_fig_ax(fig, ax, len(o_ids), 1, figsize=figsize)
 
-	x = np.asarray(grid.points[:, 0])
-
-	for row, f in enumerate(f_ids):
+	for row, o in enumerate(o_ids):
 		a = ax[row, 0]
+		x = _grid_x(grid, dims, o)
 		if hyperprior is not None:
-			prior_mean, _ = _mvn_cell(hyperprior, k_id, o_id)
+			prior_mean, _ = _mvn_cell(hyperprior, dims, k_id, c_id, o)
 			a.plot(x, np.asarray(prior_mean), linestyle="--", color=color, **line_kwargs)
 		if hyperposterior is not None:
-			post_mean, post_cov = _mvn_cell(hyperposterior, k_id, o_id)
+			post_mean, post_cov = _mvn_cell(hyperposterior, dims, k_id, c_id, o)
 			post_mean = np.asarray(post_mean)
 			post_std = np.sqrt(np.diagonal(np.asarray(post_cov)))
 			a.plot(x, post_mean, linestyle="-", color=color, **line_kwargs)
 			a.fill_between(x, post_mean - ci_scale * post_std, post_mean + ci_scale * post_std,
 							color=color, alpha=ci_alpha, linewidth=0)
-		a.set_title(f"output {o_id}" + (f", feature {f}" if len(f_ids) > 1 else ""))
+		a.set_title(f"channel {c_id}" + (f", output {o}" if len(o_ids) > 1 else ""))
 		a.set_xlabel("input")
-		a.set_ylabel("output value")
+		a.set_ylabel("channel value")
 
 	return fig, ax
 
 
 def plot_single_cluster(
 	grid: Grid,
+	dims: Dimensions,
 	k_id: int,
-	o_id: IdArg = "all",
+	c_id: IdArg = "all",
 	hyperprior: Hyperprior | None = None,
 	hyperposterior: Hyperposterior | None = None,
-	f_id: IdArg = "all",
+	o_id: IdArg = "all",
 	fig=None,
 	ax=None,
 	figsize: tuple[float, float] | None = None,
@@ -405,49 +433,50 @@ def plot_single_cluster(
 	**line_kwargs,
 ):
 	"""
-	Plot a single mean-process's values at the grid points, looping `plot_single_cluster_single_output`
-	over outputs.
+	Plot a single mean-process's values at the grid points, looping `plot_single_cluster_single_channel`
+	over channels.
 
 	Parameters
 	----------
 	grid
 		Grid of points the mean-process is evaluated at.
+	dims
+		Dimensions of the dataset `grid`/`hyperprior`/`hyperposterior` were generated/fitted from,
+		used to resolve `c_id`/`o_id="all"` and to slice their block-major arrays.
 	k_id
 		Index of the mean-process (cluster) to plot.
-	o_id, f_id
-		"all" (default) or int, restrict the plot to a single output/feature. `f_id` has no effect
-		yet since multi-feature datasets aren't supported (F is always 1).
+	c_id, o_id
+		"all" (default) or int, restrict the plot to a single channel/output.
 	hyperprior, hyperposterior
-		See `plot_single_cluster_single_output`. At least one must be given.
+		See `plot_single_cluster_single_channel`. At least one must be given.
 	fig, ax
 		Existing figure/axes to draw on, to combine with other plots. If given, `ax` must already
-		have shape `(len(f_id), len(o_id))`. A new figure/axes grid is created if None.
+		have shape `(len(o_id), len(c_id))`. A new figure/axes grid is created if None.
 	figsize
 		Passed to `plt.subplots` when a new figure is created.
 	color
 		Color of this cluster's prior/posterior lines and confidence interval.
 	ci_scale, ci_alpha
-		See `plot_single_cluster_single_output`.
+		See `plot_single_cluster_single_channel`.
 	**line_kwargs
 		Extra keyword arguments forwarded to `ax.plot` for both the prior and posterior lines.
 
 	Returns
 	-------
 	fig, ax
-		The (possibly newly created) figure and 2D array of axes, shape `(len(f_id), len(o_id))`.
+		The (possibly newly created) figure and 2D array of axes, shape `(len(o_id), len(c_id))`.
 	"""
 	if hyperprior is None and hyperposterior is None:
 		raise ValueError("At least one of hyperprior/hyperposterior must be given.")
-	_, O = _mvn_dims(hyperprior, hyperposterior)
 
-	o_ids = _resolve_ids(o_id, O)
-	f_ids = _resolve_ids(f_id, _F)
+	c_ids = _resolve_ids(c_id, dims.C)
+	o_ids = _resolve_ids(o_id, dims.O)
 
-	fig, ax = _get_fig_ax(fig, ax, len(f_ids), len(o_ids), figsize=figsize)
+	fig, ax = _get_fig_ax(fig, ax, len(o_ids), len(c_ids), figsize=figsize)
 
-	for col, o in enumerate(o_ids):
-		plot_single_cluster_single_output(
-			grid, k_id, o, hyperprior=hyperprior, hyperposterior=hyperposterior, f_id=f_id,
+	for col, c in enumerate(c_ids):
+		plot_single_cluster_single_channel(
+			grid, dims, k_id, c, hyperprior=hyperprior, hyperposterior=hyperposterior, o_id=o_id,
 			fig=fig, ax=ax[:, col:col + 1], color=color, ci_scale=ci_scale, ci_alpha=ci_alpha, **line_kwargs)
 
 	return fig, ax
@@ -455,9 +484,10 @@ def plot_single_cluster(
 
 def plot_clusters(
 	grid: Grid,
+	dims: Dimensions,
 	k_id: IdArg = "all",
+	c_id: IdArg = "all",
 	o_id: IdArg = "all",
-	f_id: IdArg = "all",
 	hyperprior: Hyperprior | None = None,
 	hyperposterior: Hyperposterior | None = None,
 	fig=None,
@@ -477,14 +507,16 @@ def plot_clusters(
 	----------
 	grid
 		Grid of points the mean-processes are evaluated at.
-	k_id, o_id, f_id
-		"all" (default) or int, restrict the plot to a single cluster/output/feature. `f_id` has no
-		effect yet since multi-feature datasets aren't supported (F is always 1).
+	dims
+		Dimensions of the dataset `grid`/`hyperprior`/`hyperposterior` were generated/fitted from,
+		used to resolve `k_id`/`c_id`/`o_id="all"` and to slice their block-major arrays.
+	k_id, c_id, o_id
+		"all" (default) or int, restrict the plot to a single cluster/channel/output.
 	hyperprior, hyperposterior
-		See `plot_single_cluster_single_output`. At least one must be given.
+		See `plot_single_cluster_single_channel`. At least one must be given.
 	fig, ax
 		Existing figure/axes to draw on, to combine with other plots (e.g. `plot_dataset`). If
-		given, `ax` must already have shape `(len(f_id), len(o_id))`. A new figure/axes grid is
+		given, `ax` must already have shape `(len(o_id), len(c_id))`. A new figure/axes grid is
 		created if None.
 	figsize
 		Passed to `plt.subplots` when a new figure is created.
@@ -492,30 +524,29 @@ def plot_clusters(
 		If True, add a legend mapping colors to cluster indices. Set to False on one of the calls
 		when composing with `plot_dataset` on the same figure, to avoid a duplicate legend.
 	ci_scale, ci_alpha
-		See `plot_single_cluster_single_output`.
+		See `plot_single_cluster_single_channel`.
 	**line_kwargs
 		Extra keyword arguments forwarded to `ax.plot` for both the prior and posterior lines.
 
 	Returns
 	-------
 	fig, ax
-		The (possibly newly created) figure and 2D array of axes, shape `(len(f_id), len(o_id))`.
+		The (possibly newly created) figure and 2D array of axes, shape `(len(o_id), len(c_id))`.
 	"""
 	if hyperprior is None and hyperposterior is None:
 		raise ValueError("At least one of hyperprior/hyperposterior must be given.")
-	K, O = _mvn_dims(hyperprior, hyperposterior)
 
-	k_ids = _resolve_ids(k_id, K)
-	o_ids = _resolve_ids(o_id, O)
-	f_ids = _resolve_ids(f_id, _F)
+	k_ids = _resolve_ids(k_id, dims.K)
+	c_ids = _resolve_ids(c_id, dims.C)
+	o_ids = _resolve_ids(o_id, dims.O)
 
-	fig, ax = _get_fig_ax(fig, ax, len(f_ids), len(o_ids), figsize=figsize)
+	fig, ax = _get_fig_ax(fig, ax, len(o_ids), len(c_ids), figsize=figsize)
 
-	palette = _cluster_palette(K)
+	palette = _cluster_palette(dims.K)
 
 	for k in k_ids:
 		plot_single_cluster(
-			grid, k, o_id=o_id, hyperprior=hyperprior, hyperposterior=hyperposterior, f_id=f_id,
+			grid, dims, k, c_id=c_id, hyperprior=hyperprior, hyperposterior=hyperposterior, o_id=o_id,
 			fig=fig, ax=ax, color=palette[k], ci_scale=ci_scale, ci_alpha=ci_alpha, **line_kwargs)
 
 	if legend:
@@ -531,13 +562,14 @@ def plot_clusters(
 def plot_single_task_prediction(
 	dataset: Dataset,
 	grid: Grid,
+	dims: Dimensions,
 	hyperposterior: Hyperposterior,
 	mixture: Mixture,
 	t_id: int,
-	o_id: int,
+	c_id: int,
 	prediction: MultivariateNormal | None = None,
 	samples: Array | None = None,
-	f_id: IdArg = "all",
+	o_id: IdArg = "all",
 	fig=None,
 	ax=None,
 	figsize: tuple[float, float] | None = None,
@@ -551,7 +583,7 @@ def plot_single_task_prediction(
 	**scatter_kwargs,
 ):
 	"""
-	Plot a single task's prediction for a single output, one subplot per feature: the task's
+	Plot a single task's prediction for a single channel, one subplot per output: the task's
 	observed points (scatter), every mean-process's hyperposterior mean (dashed lines, one per
 	cluster, colored and made transparent by that cluster's mixture coefficient for this task), and
 	optionally the task's predictive distribution (solid mean line + shaded confidence interval)
@@ -564,6 +596,10 @@ def plot_single_task_prediction(
 	grid
 		Grid of points the hyperposterior/prediction are evaluated at (only 1D inputs, `I == 1`,
 		supported for now). x-axis of the plot.
+	dims
+		Dimensions of the dataset/grid/hyperposterior/prediction, used to resolve `o_id="all"` and
+		to slice their block-major arrays. `mimosa.prediction` doesn't handle multi-output
+		explicitly yet, but follows the same `O*G` block-major convention as everything else.
 	hyperposterior
 		Posterior distribution over every mean-process's values at the grid points.
 	mixture
@@ -571,21 +607,21 @@ def plot_single_task_prediction(
 		line's alpha to this task's mixture coefficient towards that cluster.
 	t_id
 		Index of the task to plot.
-	o_id
-		Index of the output to plot.
+	c_id
+		Index of the channel to plot.
 	prediction
 		This task's predictive distribution at the grid points (e.g. from
-		`mimosa.prediction.predict_task_output`), for a single output and mean-process. Plotted as a
-		solid mean line with a shaded confidence interval if given; skipped otherwise.
+		`mimosa.prediction.predict_task_output`), for a single channel and mean-process, shape
+		`(O*G,)`/`(O*G, O*G)`. Plotted as a solid mean line with a shaded confidence interval if
+		given; skipped otherwise.
 	samples
-		Samples drawn from `prediction`, shape `(S, F*G)`. Plotted as thin lines, all the same
+		Samples drawn from `prediction`, shape `(S, O*G)`. Plotted as thin lines, all the same
 		color/alpha, if given; skipped otherwise.
-	f_id
-		"all" (default) or int, restrict the plot to a single feature. Has no effect yet since
-		multi-feature datasets aren't supported (F is always 1).
+	o_id
+		"all" (default) or int, restrict the plot to a single output.
 	fig, ax
 		Existing figure/axes to draw on, to combine with other plots. If given, `ax` must already
-		have shape `(len(f_id), 1)`. A new figure/axes grid is created if None.
+		have shape `(len(o_id), 1)`. A new figure/axes grid is created if None.
 	figsize
 		Passed to `plt.subplots` when a new figure is created.
 	legend
@@ -610,17 +646,14 @@ def plot_single_task_prediction(
 	Returns
 	-------
 	fig, ax
-		The (possibly newly created) figure and 2D array of axes, shape `(len(f_id), 1)`.
+		The (possibly newly created) figure and 2D array of axes, shape `(len(o_id), 1)`.
 	"""
 	if dataset.inputs.shape[-1] != 1 or grid.points.shape[-1] != 1:
 		raise NotImplementedError("plot_single_task_prediction only supports 1D inputs (I=1) for now.")
 
-	f_ids = _resolve_ids(f_id, _F)
+	o_ids = _resolve_ids(o_id, dims.O)
 
-	fig, ax = _get_fig_ax(fig, ax, len(f_ids), 1, figsize=figsize)
-
-	x_obs, y_obs = _task_xy(dataset, t_id, o_id)
-	x_grid = np.asarray(grid.points[:, 0])
+	fig, ax = _get_fig_ax(fig, ax, len(o_ids), 1, figsize=figsize)
 
 	K = hyperposterior.mean.shape[0]
 	palette = _cluster_palette(K)
@@ -628,29 +661,32 @@ def plot_single_task_prediction(
 
 	scatter_kwargs = _DEFAULT_SCATTER_KWARGS | scatter_kwargs
 
-	for row, f in enumerate(f_ids):
+	for row, o in enumerate(o_ids):
 		a = ax[row, 0]
+		x_grid = _grid_x(grid, dims, o)
+		block = slice(o * dims.G, (o + 1) * dims.G)
 
 		if samples is not None:
-			for s in np.asarray(samples):
+			for s in np.asarray(samples)[:, block]:
 				a.plot(x_grid, s, color=sample_color, alpha=sample_alpha, linewidth=1)
 
 		for k in range(K):
-			cluster_mean, _ = _mvn_cell(hyperposterior, k, o_id)
+			cluster_mean, _ = _mvn_cell(hyperposterior, dims, k, c_id, o)
 			a.plot(x_grid, np.asarray(cluster_mean), linestyle="--", color=palette[k], alpha=float(weights[k]))
 
 		if prediction is not None:
-			pred_mean = np.asarray(prediction.mean)
-			pred_std = np.sqrt(np.diagonal(np.asarray(prediction.covariance)))
+			pred_mean = np.asarray(prediction.mean[block])
+			pred_std = np.sqrt(np.diagonal(np.asarray(prediction.covariance[block, block])))
 			a.plot(x_grid, pred_mean, linestyle="-", color=prediction_color)
 			a.fill_between(x_grid, pred_mean - ci_scale * pred_std, pred_mean + ci_scale * pred_std,
 							color=prediction_color, alpha=ci_alpha, linewidth=0)
 
+		x_obs, y_obs = _task_xy(dataset, dims, t_id, c_id, o)
 		a.scatter(x_obs, y_obs, color=point_color, **scatter_kwargs)
 
-		a.set_title(f"task {t_id}, output {o_id}" + (f", feature {f}" if len(f_ids) > 1 else ""))
+		a.set_title(f"task {t_id}, channel {c_id}" + (f", output {o}" if len(o_ids) > 1 else ""))
 		a.set_xlabel("input")
-		a.set_ylabel("output value")
+		a.set_ylabel("channel value")
 
 	if legend:
 		handles = [

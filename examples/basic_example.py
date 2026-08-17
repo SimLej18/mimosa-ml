@@ -32,14 +32,14 @@ plt.rcParams['figure.dpi']=300
 #%% 1. Configuration
 # Dimensions: T tasks, K clusters, I/O input/output dims, N points observed
 # per task, G points in the full grid.
-dims = Dimensions(T=32, K=2, I=1, O=2, F=1, N=50, G=150)
+dims = Dimensions(T=32, K=2, I=1, C=2, O=1, N=50, G=150)
 
 # ModelConfig controls which hyperparameters are shared (across tasks/clusters/outputs/features) and
 # whether tasks/features share input locations.
 model_config = ModelConfig(
 	shared_task_hps=True,
 	shared_cluster_hps=True,
-	shared_output_hps=True,
+	shared_channel_hps=True,
 	cluster_specific_task_hps=False,
 	isotopic_tasks=False,
 )
@@ -72,7 +72,7 @@ save_csv("./dummy.csv", dataset)
 dataset = load_csv("./dummy.csv")
 
 #%% 4. Plot the raw dataset (coloured by each task's true cluster)
-fig, ax = plot_dataset(dataset, mixture=true_mixture, figsize=(8*dims.O, 6))
+fig, ax = plot_dataset(dataset, mixture=true_mixture, figsize=(8 * dims.C, 6))
 fig.suptitle("Synthetic dataset (colored by true cluster)")
 plt.show()
 
@@ -108,8 +108,8 @@ fitted_params, fitted_mixture = model.fit(dataset, fitted_grid, mixture_proporti
 #%% 7. Plot the fitted clusters (mean-processes)
 hyperposterior = model.hyperpost(dataset, fitted_grid, fitted_mixture, fitted_params, jitter=model.jitter)
 
-fig, ax = plot_dataset(dataset, mixture=true_mixture, figsize=(8*dims.O, 6), alpha=.1)
-fig, ax = plot_clusters(fitted_grid, hyperposterior=hyperposterior, figsize=(8*dims.O, 6), fig=fig, ax=ax)
+fig, ax = plot_dataset(dataset, mixture=true_mixture, figsize=(8 * dims.C, 6), alpha=.1)
+fig, ax = plot_clusters(fitted_grid, hyperposterior=hyperposterior, figsize=(8 * dims.C, 6), fig=fig, ax=ax)
 fig.suptitle("Fitted clusters (mean-processes) on the dataset")
 plt.show()
 
@@ -122,7 +122,7 @@ prediction = predictions[t_id, k_id, o_id]
 
 #%% 9. Plot the prediction: observed points, cluster means, and predictive mean + confidence interval
 fig, ax = plot_single_task_prediction(
-	dataset, fitted_grid, hyperposterior, fitted_mixture, t_id, o_id, prediction=prediction, figsize=(8*dims.O, 6)
+	dataset, fitted_grid, hyperposterior, fitted_mixture, t_id, o_id, prediction=prediction, figsize=(8 * dims.C, 6)
 )
 fig.suptitle(f"Prediction — task {t_id}, output {o_id}")
 plt.show()
@@ -134,7 +134,7 @@ sample_keys = jr.split(sample_key, n_samples)
 samples = vmap(lambda k: sample_gp(k, prediction.mean, prediction.covariance))(sample_keys)  # (S, G)
 
 fig, ax = plot_single_task_prediction(
-	dataset, fitted_grid, hyperposterior, fitted_mixture, t_id, o_id, samples=samples, figsize=(8*dims.O, 6)
+	dataset, fitted_grid, hyperposterior, fitted_mixture, t_id, o_id, samples=samples, figsize=(8 * dims.C, 6)
 )
 fig.suptitle(f"Prediction samples — task {t_id}, output {o_id}")
 plt.show()

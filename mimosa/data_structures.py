@@ -10,7 +10,7 @@ from jaxtyping import Array, Float, Int, jaxtyped
 import jax.numpy as jnp
 from beartype import beartype as typechecker
 import equinox as eqx
-from kernax import AbstractMean, AbstractKernel
+from kernax import MeanLike, KernelLike
 
 
 @dataclass(frozen=True)
@@ -26,10 +26,10 @@ class Dimensions:
 		Number of clusters in the mixture.
 	I
 		Dimensionality of input points.
+	C
+		Number of channels, aka dimensionality of output points.
 	O
-		Dimensionality of output points.
-	F
-		Number of correlated features.
+		Number of correlated outputs.
 	N
 		Number of points observed by the largest task.
 	G
@@ -44,8 +44,8 @@ class Dimensions:
 	T: int
 	K: int
 	I: int
+	C: int
 	O: int
-	F: int
 	N: int
 	G: int
 
@@ -75,24 +75,27 @@ class ModelConfig:
 		If True, task-kernel hyperparameters are shared across tasks; if False, each task has its own.
 	shared_cluster_hps
 		If True, cluster-kernel hyperparameters are shared across mean-processes; if False, each mean-process has its own.
+	shared_channel_hps
+		If True, hyperparameters are shared across channel dimensions; if False, each output has its own.
 	shared_output_hps
-		If True, hyperparameters are shared across output dimensions; if False, each output has its own.
-	shared_features_hps
 		If True, hyperparameters are shared across features; if False, each feature has its own.
 	cluster_specific_task_hps
 		If True, task-kernel hyperparameters may additionally vary by cluster assignment, independently of `shared_task_hps`.
 	isotopic_tasks
 		If True, all tasks share the same input locations.
-	isotopic_features
-		If True, all features share the same input locations.
+	isotopic_output_in_tasks
+		If True, all outputs in tasks share the same input locations.
+	isotopic_output_in_grid
+		If True, all outputs in the grid share the same input locations.
 	"""
 	shared_task_hps: bool = True
 	shared_cluster_hps: bool = True
+	shared_channel_hps: bool = True
 	shared_output_hps: bool = True
-	shared_features_hps: bool = True
 	cluster_specific_task_hps: bool = True
 	isotopic_tasks: bool = True
-	isotopic_features: bool = True
+	isotopic_output_in_tasks: bool = True
+	isotopic_output_in_grid: bool = True
 
 
 @dataclass(frozen=True)
@@ -137,10 +140,14 @@ def validate_model_config(model_config: ModelConfig, dimensions: Dimensions) -> 
 		raise ValueError("Cannot have distinct task hyperparameters with only one task.")
 	if not model_config.shared_cluster_hps and dimensions.K == 1:
 		raise ValueError("Cannot have distinct cluster hyperparameters with only one cluster.")
+	if not model_config.shared_channel_hps and dimensions.C == 1:
+		raise ValueError("Cannot have distinct channel hyperparameters with only one channel.")
 	if not model_config.shared_output_hps and dimensions.O == 1:
 		raise ValueError("Cannot have distinct output hyperparameters with only one output.")
-	if not model_config.shared_features_hps and dimensions.F == 1:
-		raise ValueError("Cannot have distinct feature hyperparameters with only one feature.")
+	if (not model_config.isotopic_output_in_grid or not model_config.isotopic_output_in_tasks) and dimensions.O == 1:
+		raise ValueError("Cannot have multi-output grids/task inputs with only one output.")
+	if model_config.isotopic_output_in_tasks and not model_config.isotopic_output_in_grid:
+		raise ValueError("Cannot have isotopic output in tasks with inputs sampled from an heterotopic grid")
 
 
 class Parameters(eqx.Module):
@@ -158,10 +165,10 @@ class Parameters(eqx.Module):
 	noise_kernel
 		Covariance kernel modelling the observation noise.
 	"""
-	cluster_mean: AbstractMean
-	cluster_kernel: AbstractKernel
-	task_kernel: AbstractKernel
-	noise_kernel: AbstractKernel
+	cluster_mean: MeanLike
+	cluster_kernel: KernelLike
+	task_kernel: KernelLike
+	noise_kernel: KernelLike
 
 
 @dataclass(frozen=True)
@@ -201,10 +208,13 @@ class Dataset(eqx.Module):
 		Output values of each task, at each feature and input point.
 	known_output_noise
 		Known observation noise, when available.
+	output_ids
+		IDs of the output of each input point. None if isotopic outputs. Else, shape `(T, F*N)`.
 	"""
-	inputs: Float[Array, "#T N I"] | Float[Array, "#T FN I"]
-	outputs: Float[Array, "T FN O"]
-	known_output_noise: None | Float[Array, "T FN O"] = None
+	inputs: Float[Array, "#T oN I"]  # "o" is 1 if isotopic_output_in_tasks and dims.O otherwise
+	outputs: Float[Array, "T ON C"]
+	known_output_noise: None | Float[Array, "T ON C"] = None
+	output_ids: None | Int[Array, "T oN"] = None
 
 
 @jaxtyped(typechecker=typechecker)
@@ -216,11 +226,14 @@ class Grid(eqx.Module):
 	----------
 	points
 		Input points of the grid.
+	output_ids
+		IDs of the output of each grid point. None if isotopic outputs. Else, shape `(F*G,)`. Defaults to `None`.
 	mappings
-		Index of each task's input points in `points`.
+		Index of each task's input points in `points`. Defaults to `None`.
 	"""
 	points: Float[Array, "FG I"]
-	mappings:  Int[Array, "#T N"]
+	output_ids: None | Int[Array, "FG"] = None
+	mappings:  None | Int[Array, "#T N"] = None
 
 
 @jaxtyped(typechecker=typechecker)

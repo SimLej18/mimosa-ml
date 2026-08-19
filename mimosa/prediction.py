@@ -183,17 +183,23 @@ def predict(dataset: Dataset,
 	"""
 	if dataset.inputs.shape[0] == 1:
 		extended_grid = grid.points
+		output_ids = dataset.output_ids[0] if dataset.output_ids is not None else None
 		task_cov_blocks = PredictionCovBlocks(
-			cov_obs=parameters.task_kernel(dataset.inputs[0]) + parameters.noise_kernel(dataset.inputs[0]),
-			cov_grid=parameters.task_kernel(extended_grid),
-			cov_crossed=parameters.task_kernel(dataset.inputs[0], extended_grid),
+			cov_obs=parameters.task_kernel(dataset.inputs[0], output_ids=output_ids)
+			        + parameters.noise_kernel(dataset.inputs[0], output_ids=output_ids),
+			cov_grid=parameters.task_kernel(extended_grid, output_ids=grid.output_ids),
+			cov_crossed=parameters.task_kernel(dataset.inputs[0], extended_grid, output_ids=output_ids, output_ids2=grid.output_ids),
 		)
 	else:
 		extended_grid = jnp.broadcast_to(grid.points, dataset.inputs.shape[:1] + grid.points.shape)
+		# extended_grid gains a leading T axis, so any output_ids passed alongside it must too.
+		extended_grid_ids = None if grid.output_ids is None \
+			else jnp.broadcast_to(grid.output_ids, dataset.inputs.shape[:1] + grid.output_ids.shape)
 		task_cov_blocks = PredictionCovBlocks(
-			cov_obs=parameters.task_kernel(dataset.inputs) + parameters.noise_kernel(dataset.inputs),
-			cov_grid=parameters.task_kernel(extended_grid),
-			cov_crossed=parameters.task_kernel(dataset.inputs, extended_grid),
+			cov_obs=parameters.task_kernel(dataset.inputs, output_ids=dataset.output_ids)
+			        + parameters.noise_kernel(dataset.inputs, output_ids=dataset.output_ids),
+			cov_grid=parameters.task_kernel(extended_grid, output_ids=extended_grid_ids),
+			cov_crossed=parameters.task_kernel(dataset.inputs, extended_grid, output_ids=dataset.output_ids, output_ids2=extended_grid_ids),
 		)
 
 	mappings = grid.mappings[0] if dataset.inputs.shape[0] == 1 else grid.mappings

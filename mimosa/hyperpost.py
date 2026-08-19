@@ -40,7 +40,7 @@ def single_channel_hyperpost(outputs: Array, grid: Grid, responsibilities: Array
 	-------
 	Hyperposterior over this mean-process's values at the grid points, for this channel.
 	"""
-	big_eye = jnp.eye(grid.points.shape[0])
+	big_eye = jnp.eye(hyperprior.covariance.shape[-1])  # hyperprior is always dense over O*G, unlike grid.points which may collapse to G
 	small_eye = jnp.eye(outputs.shape[-1])
 
 	# Cluster covariance inversion
@@ -58,7 +58,7 @@ def single_channel_hyperpost(outputs: Array, grid: Grid, responsibilities: Array
 
 	# Mapping to full grid
 	mappings = jnp.broadcast_to(grid.mappings, (outputs.shape[0], grid.mappings.shape[1]))
-	task_covs_inv = jnp.zeros((len(grid.points), len(grid.points))).at[mappings[:, :, None], mappings[:, None, :]].add(task_covs_inv)  # Shape (O*G, O*G)
+	task_covs_inv = jnp.zeros_like(big_eye).at[mappings[:, :, None], mappings[:, None, :]].add(task_covs_inv)  # Shape (O*G, O*G)
 
 	# Sum mean and task covariances and compute Cholesky factor of the posterior covariance
 	post_covs_inv = cho_factor(cluster_cov_inv + task_covs_inv, jitter=jitter)  # Shape (O*G, O*G)
@@ -69,7 +69,7 @@ def single_channel_hyperpost(outputs: Array, grid: Grid, responsibilities: Array
 	prior_mean = cho_solve(cluster_cov_l, hyperprior.mean)  # Shape (O*G)
 	task_means = cho_solve(jnp.broadcast_to(task_covs_l, (outputs.shape[0],)+task_covs_l.shape[1:]), jnp.nan_to_num(outputs))  # Shape (T, O*N)
 	task_means *= responsibilities[:, None]  # Shape (T, O*N)
-	task_means = jnp.zeros((len(grid.points),)).at[mappings].add(task_means)  # Shape (O*G)
+	task_means = jnp.zeros(big_eye.shape[0]).at[mappings].add(task_means)  # Shape (O*G)
 
 	full_mean = prior_mean + task_means  # Shape (O*G)
 	post_mean = cho_solve(post_covs_inv, full_mean)
@@ -162,14 +162,15 @@ def hyperpost(dataset: Dataset, grid: Grid, mixture: Mixture, parameters: Parame
 	>>> hyperposterior.mean.shape
 	(1, 1, 5)
 	"""
-	hyperprior = Hyperprior(parameters.cluster_mean(grid.points), parameters.cluster_kernel(grid.points))
+	hyperprior = Hyperprior(parameters.cluster_mean(grid.points, output_ids=grid.output_ids), parameters.cluster_kernel(grid.points, output_ids=grid.output_ids))
 	# hyperprior mean has shape (K, C, O*G) with K=1 if shared_cluster_hps and C=1 if shared_channel_hps
 	# hyperprior cov has shape (K, C, O*G, O*G) with K=1 if shared_cluster_hps and C=1 if shared_channel_hps
 
 	if dataset.inputs.shape[0] == 1:
-		task_covs = parameters.task_kernel(dataset.inputs[0]) + parameters.noise_kernel(dataset.inputs[0])  # Shape: (T, K, C, O*N, O*N) with
+		output_ids = dataset.output_ids[0] if dataset.output_ids is not None else None
+		task_covs = parameters.task_kernel(dataset.inputs[0], output_ids=output_ids) + parameters.noise_kernel(dataset.inputs[0], output_ids=output_ids)  # Shape: (T, K, C, O*N, O*N) with
 	else:
-		task_covs = parameters.task_kernel(dataset.inputs) + parameters.noise_kernel(dataset.inputs)
+		task_covs = parameters.task_kernel(dataset.inputs, output_ids=dataset.output_ids) + parameters.noise_kernel(dataset.inputs, output_ids=dataset.output_ids)
 
 	# Shape: (T, K, C, O*N, O*N) with
 	# T=1 if shared_inputs_in_tasks, shared_task_hps and no cluster_specific_task_hps

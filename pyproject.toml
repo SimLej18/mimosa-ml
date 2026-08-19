@@ -21,7 +21,7 @@ dependencies = [
     "jax",
     "equinox",
     "optimistix",
-    "kernax-ml>=0.7.2a0",
+    "kernax-ml>=0.7.3a0",
     "matplotlib",
     "polars",
     "numpy",

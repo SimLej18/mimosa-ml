@@ -209,12 +209,14 @@ class Dataset(eqx.Module):
 	known_output_noise
 		Known observation noise, when available.
 	output_ids
-		IDs of the output of each input point. None if isotopic outputs. Else, shape `(T, O*N)`.
+		IDs of the output of each input point. None if isotopic outputs. Else, shape `(1, O*N)` if
+		every task shares the same output ids (in particular, whenever `isotopic_tasks`), or
+		`(T, O*N)` if they vary per task.
 	"""
 	inputs: Float[Array, "#T oN I"]  # "o" is 1 if isotopic_output_in_tasks and dims.O otherwise
 	outputs: Float[Array, "T ON C"]
 	known_output_noise: None | Float[Array, "T ON C"] = None
-	output_ids: None | Int[Array, "T oN"] = None
+	output_ids: None | Int[Array, "#T oN"] = None
 
 
 @jaxtyped(typechecker=typechecker)

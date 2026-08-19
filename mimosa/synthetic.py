@@ -146,8 +146,8 @@ def sample_inputs(key: Array, grid: Grid, dims: Dimensions, config: ModelConfig)
 			if config.isotopic_tasks:
 				mappings = vmap(lambda k: jr.choice(k, jnp.arange(dims.G), (dims.N,), replace=False))(
 					jr.split(key, dims.O))
-				mappings = mappings.reshape(dims.N * dims.O) + output_mapping_offset
-				inputs = grid.points[mappings][None, ...]  # Broadcast to every tasks
+				mappings = (mappings.reshape(dims.N * dims.O) + output_mapping_offset)[None, ...]  # Broadcast to every tasks
+				inputs = grid.points[mappings[0]][None, ...]  # Broadcast to every tasks
 
 			else:
 				mappings = vmap(lambda k: jr.choice(k, jnp.arange(dims.G), (dims.N,), replace=False))(
@@ -469,10 +469,15 @@ def generate_data(
 	else:
 		task_means = vmap(lambda t_m, m: t_m[:, m], in_axes=(0, 0))(task_means_on_grid, mappings)  # Shape (T, C, O*N)
 
+	if output_ids is not None:
+		dataset_output_ids = jnp.broadcast_to(output_ids, ((1 if config.isotopic_tasks else dims.T),) + output_ids.shape)
+	else:
+		dataset_output_ids = None
+
 	if config.isotopic_tasks:
 		task_covs = parameters.task_kernel(inputs[0], output_ids=output_ids) + parameters.noise_kernel(inputs[0], output_ids=output_ids)
 	else:
-		task_covs = parameters.task_kernel(inputs, output_ids=output_ids) + parameters.noise_kernel(inputs, output_ids=output_ids)
+		task_covs = parameters.task_kernel(inputs, output_ids=dataset_output_ids) + parameters.noise_kernel(inputs, output_ids=dataset_output_ids)
 	# Shape (T, K, C, O*N, O*N), with T=1 if shared_task_hps, K=1 if not cluster_specific_task_hps and C=1 if shared_channel_hps
 
 	if config.cluster_specific_task_hps:
@@ -500,7 +505,15 @@ def generate_data(
 
 	outputs = sample_tasks(subkeys, task_means, task_covs).mT  # Shape (T, O*N, C)
 
-	dataset = Dataset(inputs=inputs, outputs=outputs)
+	if output_ids is not None:
+		# output_ids is shared across tasks here, but the algorithm should support it varying per
+		# task too -- so its leading axis mirrors `inputs`' own (1 if isotopic_tasks, T otherwise),
+		# rather than adding a dedicated sharing flag.
+		dataset_output_ids = jnp.broadcast_to(output_ids, ((1 if config.isotopic_tasks else dims.T),) + output_ids.shape)
+	else:
+		dataset_output_ids = None
+
+	dataset = Dataset(inputs=inputs, outputs=outputs, output_ids=dataset_output_ids)
 	grid = Grid(points=grid.points, mappings=mappings, output_ids=grid.output_ids)
 
 	return dataset, grid, hyperprior, mixture, parameters, cluster_means, tasks
@@ -567,5 +580,5 @@ class RandomDataRemover(AbstractDataRemover):
 		outputs_known_noise = None if dataset.known_output_noise is None \
 			else jnp.where(remove_mask, jnp.nan, dataset.known_output_noise)
 
-		dataset = Dataset(inputs=dataset.inputs, outputs=outputs, known_output_noise=outputs_known_noise)
+		dataset = Dataset(inputs=dataset.inputs, outputs=outputs, known_output_noise=outputs_known_noise, output_ids=dataset.output_ids)
 		return (dataset, grid) if grid is not None else dataset

@@ -95,12 +95,14 @@ def _task_xy(dataset: Dataset, dims: Dimensions, t_id: int, c_id: int, o_id: int
 	arrays with missing (NaN) points already dropped.
 	"""
 	t = 0 if dataset.inputs.shape[0] == 1 else t_id
+	output_ids = dataset.output_ids[t] if dataset.output_ids is not None else None
+
 	# `inputs` has dims.N rows if every output shares this task's input locations
 	# (isotopic_output_in_tasks), dims.O * dims.N rows otherwise.
-	in_rows = slice(None) if dataset.inputs.shape[1] == dims.N else _output_rows(dataset.output_ids, o_id, dims.N)
+	in_rows = slice(None) if dataset.inputs.shape[1] == dims.N else _output_rows(output_ids, o_id, dims.N)
 	x = np.asarray(dataset.inputs[t, in_rows, 0])
 
-	out_rows = _output_rows(dataset.output_ids, o_id, dims.N)
+	out_rows = _output_rows(output_ids, o_id, dims.N)
 	y = np.asarray(dataset.outputs[t_id, out_rows, c_id])
 
 	mask = ~np.isnan(y)

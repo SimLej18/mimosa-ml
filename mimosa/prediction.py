@@ -14,12 +14,12 @@ from mimosa.data_structures import (Parameters, Dataset, Grid, Hyperposterior, P
 from mimosa import DEFAULT_JITTER
 
 
-def predict_task_output(output_obs: Array,
+def predict_task_channel(output_obs: Array,
                         post_mean_blocks: PredictionMeanBlocks,
                         cov_blocks: PredictionCovBlocks,
                         jitter: Array = DEFAULT_JITTER) -> MultivariateNormal:
 	"""
-	Predict a single task's output at the grid points, under a single mean-process, by GP
+	Predict a single task's channel at the grid points, under a single mean-process, by GP
 	conditioning on the task's observed values.
 
 	Handles padded data: missing points are read from NaNs in `output_obs`.
@@ -27,18 +27,18 @@ def predict_task_output(output_obs: Array,
 	Parameters
 	----------
 	output_obs
-		Observed values of this output, for this task. Shape `(F*N,)`.
+		Observed values of this channel, for this task. Shape `(O*N,)`.
 	post_mean_blocks
 		Mean-process hyperposterior mean at the task's observed points and at the grid points,
-		for this output.
+		for this channel.
 	cov_blocks
-		Combined mean-process and task covariance (observed/grid/cross blocks), for this output.
+		Combined mean-process and task covariance (observed/grid/cross blocks), for this channel.
 	jitter
 		Diagonal jitter added before Cholesky factorization, for numerical stability.
 
 	Returns
 	-------
-	Predicted distribution over this task's output at the grid points.
+	Predicted distribution over this task's channel at the grid points.
 	"""
 	padding_mask_1D = ~jnp.isnan(output_obs)[:, None]
 	padding_mask_2D = padding_mask_1D & padding_mask_1D.T
@@ -63,36 +63,36 @@ def predict_task_in_cluster(output_obs: Array,
                             cov_blocks: PredictionCovBlocks,
                             jitter: Array = DEFAULT_JITTER) -> MultivariateNormal:
 	"""
-	Predict a single task's outputs at the grid points, under a single mean-process, vmapped
-	across outputs.
+	Predict a single task's channels at the grid points, under a single mean-process, vmapped
+	across channels.
 
-	See `predict_task_output`.
+	See `predict_task_channel`.
 
 	Parameters
 	----------
 	output_obs
-		Observed values of this task, for every output. Shape `(F*N, O)`.
+		Observed values of this task, for every channel. Shape `(O*N, C)`.
 	post_mean_blocks
 		Mean-process hyperposterior mean at the task's observed points and at the grid points,
-		batched over output dimensions.
+		batched over channel dimensions.
 	cov_blocks
 		Combined mean-process and task covariance (observed/grid/cross blocks), batched over
-		output dimensions.
+		channel dimensions.
 	jitter
 		Diagonal jitter added before Cholesky factorization, for numerical stability.
 
 	Returns
 	-------
-	Predicted distribution over this task's outputs at the grid points, batched over output dimensions.
+	Predicted distribution over this task's channels at the grid points, batched over channel dimensions.
 	"""
 	if cov_blocks.cov_obs.shape[0] == 1:
 		return (vmap(
-			predict_task_output,
+			predict_task_channel,
 			in_axes=(0, 0, None, None))
 		        (output_obs.T, post_mean_blocks, cov_blocks[0], jitter))
 	else:
 		return (vmap(
-			predict_task_output,
+			predict_task_channel,
 			in_axes=(0, 0, 0, None))
 		        (output_obs.T, post_mean_blocks, cov_blocks, jitter))
 
@@ -111,7 +111,7 @@ def predict_clusters(task_outputs: Array,
 	Parameters
 	----------
 	task_outputs
-		Observed values of this task, for every output. Shape `(F*N, O)`.
+		Observed values of this task, for every channel. Shape `(O*N, C)`.
 	mappings
 		Index of this task's observed points in the grid.
 	hyperposterior
@@ -124,8 +124,8 @@ def predict_clusters(task_outputs: Array,
 
 	Returns
 	-------
-	Predicted distribution over this task's outputs at the grid points, batched over mean-processes
-	(and output dimensions).
+	Predicted distribution over this task's channels at the grid points, batched over mean-processes
+	(and channel dimensions).
 	"""
 	post_mean_obs = hyperposterior.mean[:, :, mappings]
 	post_cov_obs = hyperposterior.covariance[:, :, mappings, :][:, :, :, mappings]
@@ -179,7 +179,7 @@ def predict(dataset: Dataset,
 	Returns
 	-------
 	Predicted distribution over every task's outputs at the grid points, batched over tasks,
-	mean-processes and output dimensions.
+	mean-processes and channel dimensions.
 	"""
 	if dataset.inputs.shape[0] == 1:
 		extended_grid = grid.points

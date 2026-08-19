@@ -35,7 +35,7 @@ class MixtureInitialiser(eqx.Module):
 
 class KMeansMixtureInitialiser(MixtureInitialiser):
 	"""
-	Initialise a Mixture by soft k-means clustering of per-task output summary statistics.
+	Initialise a Mixture by soft k-means clustering of per-task channel summary statistics.
 
 	Attributes
 	----------
@@ -53,11 +53,11 @@ class KMeansMixtureInitialiser(MixtureInitialiser):
 
 	def __call__(self, dataset: Dataset) -> Mixture:
 		"""
-		Cluster tasks by soft k-means over each task's per-output min, max, mean and std.
+		Cluster tasks by soft k-means over each task's per-channel min, max, mean and std.
 
 		See `MixtureInitialiser.__call__`.
 		"""
-		# Outputs: shape (T, N, O)
+		# Outputs: shape (T, N, C)
 		features = jnp.stack((
 			jnp.nanmin(dataset.outputs, axis=1),
 			jnp.nanmax(dataset.outputs, axis=1),

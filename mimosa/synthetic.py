@@ -27,14 +27,14 @@ def generate_grid(dims: Dimensions, config: ModelConfig, bounds: list[tuple[floa
 	dims
 		Dimensions of the dataset to generate, containing dims.G, dims.I and dims.O.
 	config
-		Model configuration, used for its `isotopic_outputs_in_grid` field when dims.F > 1.
+		Model configuration, used for its `isotopic_output_in_grid` field when dims.O > 1.
 	bounds
 		Min and max value of the grid, applied to every dimension.
 
 	Returns
 	-------
 	A Grid instance with no mappings.
-	The grid points. shape `(~G, I)` if isotopic_outputs_in_grid and (O * ~G, I) otherwise, where ~G is the first power of dims.I above or equal to `G`.
+	The grid points. shape `(~G, I)` if isotopic_output_in_grid and (O * ~G, I) otherwise, where ~G is the first power of dims.I above or equal to `G`.
 	"""
 	if config.isotopic_output_in_grid and len(bounds) > 1:
 		raise ValueError(f"Cannot have different output bounds for isotopic outputs grid.")
@@ -68,11 +68,11 @@ def generate_grid(dims: Dimensions, config: ModelConfig, bounds: list[tuple[floa
 
 def sample_inputs(key: Array, grid: Grid, dims: Dimensions, config: ModelConfig) -> tuple[Array, None | Array, Array]:
 	"""
-	Sample `dims.N` input points per task (or per feature) from `grid`, without replacement, and
+	Sample `dims.N` input points per task (or per output) from `grid`, without replacement, and
 	compute each sampled point's index (mapping) in `grid`.
 
-	Sampling structure follows `config.isotopic_tasks`/`config.isotopic_features`: shared or distinct
-	sampled points across tasks, and across features.
+	Sampling structure follows `config.isotopic_tasks`/`config.isotopic_output_in_tasks`/
+	`config.isotopic_output_in_grid`: shared or distinct sampled points across tasks, and across outputs.
 
 	Parameters
 	----------
@@ -83,7 +83,8 @@ def sample_inputs(key: Array, grid: Grid, dims: Dimensions, config: ModelConfig)
 	dims
 		Dimensions of the dataset to generate.
 	config
-		Model configuration, used for its `isotopic_tasks`/`isotopic_features` fields.
+		Model configuration, used for its `isotopic_tasks`/`isotopic_output_in_tasks`/
+		`isotopic_output_in_grid` fields.
 
 	Returns
 	-------
@@ -162,7 +163,7 @@ def build_mean(
 		dims: Dimensions,
 		config: ModelConfig) -> AbstractModule:
 	"""
-	Batch `mean` across output dimensions and mean-processes, according to `config`'s HP-sharing
+	Batch `mean` across channel dimensions and mean-processes, according to `config`'s HP-sharing
 	flags, for synthetic data generation.
 
 	`mean` should be the "base" mean, i.e. the one used if all HPs were shared.
@@ -174,13 +175,13 @@ def build_mean(
 	dims
 		Dimensions of the dataset to generate.
 	config
-		Model configuration, used for its `shared_output_hps`/`shared_cluster_hps` fields.
+		Model configuration, used for its `shared_channel_hps`/`shared_cluster_hps` fields.
 
 	Returns
 	-------
-	Batched mean function, with independent hyperparameters per output/mean-process where configured.
+	Batched mean function, with independent hyperparameters per channel/mean-process where configured.
 	"""
-	# multi-output HPs
+	# multi-channel HPs
 	if not config.shared_channel_hps:
 		mean = BatchModule(mean, batch_size=dims.C, batch_in_axes=0, batch_over_inputs=False)
 	else:
@@ -200,12 +201,12 @@ def build_mean_kernel(
 		dims: Dimensions,
 		config: ModelConfig) -> AbstractModule:
 	"""
-	Batch `mean_kernel` across output dimensions and mean-processes, according to `config`'s
+	Batch `mean_kernel` across channel dimensions and mean-processes, according to `config`'s
 	HP-sharing flags, for synthetic data generation.
 
 	`mean_kernel` should be the "base" kernel, i.e. the one used if all HPs were shared. If
-	`dims.F > 1`, it should already be wrapped in a `BlockKernel` to handle the multi-feature
-	structure (this function doesn't manage feature-related config).
+	`dims.O > 1`, it should already be wrapped in a `BlockKernel` to handle the multi-output
+	structure (this function doesn't manage output-related config).
 
 	Parameters
 	----------
@@ -214,11 +215,11 @@ def build_mean_kernel(
 	dims
 		Dimensions of the dataset to generate.
 	config
-		Model configuration, used for its `shared_output_hps`/`shared_cluster_hps` fields.
+		Model configuration, used for its `shared_channel_hps`/`shared_cluster_hps` fields.
 
 	Returns
 	-------
-	Batched kernel, with independent hyperparameters per output/mean-process where configured.
+	Batched kernel, with independent hyperparameters per channel/mean-process where configured.
 	"""
 	# multi-channel HPs
 	if not config.shared_channel_hps:
@@ -240,12 +241,12 @@ def build_task_kernel(
 		dims: Dimensions,
 		config: ModelConfig) -> AbstractModule:
 	"""
-	Batch `task_kernel` across output dimensions, mean-processes and tasks, according to `config`'s
+	Batch `task_kernel` across channel dimensions, mean-processes and tasks, according to `config`'s
 	HP-sharing flags, for synthetic data generation. Used for both the task and noise kernels.
 
 	`task_kernel` should be the "base" kernel, i.e. the one used if all HPs were shared. If
-	`dims.F > 1`, it should already be wrapped in a `BlockKernel` to handle the multi-feature
-	structure (this function doesn't manage feature-related config).
+	`dims.O > 1`, it should already be wrapped in a `BlockKernel` to handle the multi-output
+	structure (this function doesn't manage output-related config).
 
 	Parameters
 	----------
@@ -254,14 +255,14 @@ def build_task_kernel(
 	dims
 		Dimensions of the dataset to generate.
 	config
-		Model configuration, used for its `shared_output_hps`, `cluster_specific_task_hps`,
+		Model configuration, used for its `shared_channel_hps`, `cluster_specific_task_hps`,
 		`shared_task_hps` and `isotopic_tasks` fields.
 
 	Returns
 	-------
-	Batched kernel, with independent hyperparameters per output/mean-process/task where configured.
+	Batched kernel, with independent hyperparameters per channel/mean-process/task where configured.
 	"""
-	# multi-output HPs
+	# multi-channel HPs
 	if not config.shared_channel_hps:
 		task_kernel = BatchModule(task_kernel, batch_size=dims.C, batch_in_axes=0, batch_over_inputs=False)
 	else:
@@ -310,7 +311,7 @@ def build_parameters(parameters: Parameters, dims: Dimensions, config: ModelConf
 
 	Returns
 	-------
-	`parameters` with every field batched, with independent hyperparameters per output/cluster/task
+	`parameters` with every field batched, with independent hyperparameters per channel/cluster/task
 	where configured.
 	"""
 	return Parameters(
@@ -373,8 +374,8 @@ def generate_data(
 	parameters
 		Cluster mean/kernel and task/noise kernels, used as priors to sample the cluster processes.
 	config
-		Model configuration: hyperparameter-sharing structure (task/cluster/output/feature) and
-		input-sampling structure (isotopic tasks/features).
+		Model configuration: hyperparameter-sharing structure (task/cluster/channel/output) and
+		input-sampling structure (isotopic tasks/outputs).
 	priors
 		Min/max bounds for each parameter of `parameters`, used to sample its hyperparameters.
 		If None, hyperparameters are left unchanged.
@@ -396,7 +397,7 @@ def generate_data(
 	parameters
 		Sampled Parameters (cluster mean/kernel, task/noise kernels) used for generation.
 	cluster_means
-		Sampled mean-process values at the grid points. Shape `(K, O, F*G)`.
+		Sampled mean-process values at the grid points. Shape `(K, C, O*G)`.
 	tasks
 		Task processes' mean and covariance, evaluated at each task's sampled input points.
 
@@ -436,25 +437,25 @@ def generate_data(
 		parameters = sample_parameters_from_priors(subkey, parameters, priors)
 
 	# Step 5: sample mean processes for each cluster from the mean and mean kernel, evaluated on the grid
-	# mean has shape (K, O, F*G), cov has shape (K, O, F*G, F*G)
-	hyperprior = Hyperprior(mean=parameters.cluster_mean(grid.points, output_ids=grid.output_ids), covariance=parameters.cluster_kernel(grid.points, output_ids=output_ids))
+	# mean has shape (K, C, O*G), cov has shape (K, C, O*G, O*G)
+	hyperprior = Hyperprior(mean=parameters.cluster_mean(grid.points, output_ids=grid.output_ids), covariance=parameters.cluster_kernel(grid.points, output_ids=grid.output_ids))
 
 	if config.shared_channel_hps:
-		sample_outputs = vmap(lambda k, m, c: sample_gp(k, m[0], c[0], jitter=jitter), in_axes=(0, None, None))
+		sample_channels = vmap(lambda k, m, c: sample_gp(k, m[0], c[0], jitter=jitter), in_axes=(0, None, None))
 		if config.shared_cluster_hps:
-			sample_clusters = vmap(lambda k, m, c: sample_outputs(k, m[0], c[0]), in_axes=(0, None, None))
+			sample_clusters = vmap(lambda k, m, c: sample_channels(k, m[0], c[0]), in_axes=(0, None, None))
 		else:
-			sample_clusters = vmap(lambda k, m, c: sample_outputs(k, m, c), in_axes=(0, 0, 0))
+			sample_clusters = vmap(lambda k, m, c: sample_channels(k, m, c), in_axes=(0, 0, 0))
 	else:
-		sample_outputs = vmap(lambda k, m, c: sample_gp(k, m, c, jitter=jitter), in_axes=(0, 0, 0))
+		sample_channels = vmap(lambda k, m, c: sample_gp(k, m, c, jitter=jitter), in_axes=(0, 0, 0))
 		if config.shared_cluster_hps:
-			sample_clusters = vmap(lambda k, m, c: sample_outputs(k, m[0], c[0]), in_axes=(0, None, None))
+			sample_clusters = vmap(lambda k, m, c: sample_channels(k, m[0], c[0]), in_axes=(0, None, None))
 		else:
-			sample_clusters = vmap(lambda k, m, c: sample_outputs(k, m, c), in_axes=(0, 0, 0))
+			sample_clusters = vmap(lambda k, m, c: sample_channels(k, m, c), in_axes=(0, 0, 0))
 	key, subkey = jr.split(key)
 	subkeys = jr.split(subkey, (dims.K, dims.C))
 
-	cluster_means = sample_clusters(subkeys, hyperprior.mean, hyperprior.covariance)  # Shape (K, O, F*G)
+	cluster_means = sample_clusters(subkeys, hyperprior.mean, hyperprior.covariance)  # Shape (K, C, O*G)
 
 	# Step 6: assign tasks to clusters
 	proportions = jnp.repeat(1/dims.K, dims.K)
@@ -462,42 +463,42 @@ def generate_data(
 	mixture = Mixture(proportions=proportions, responsibilities=responsibilities)
 
 	# Step 7: sample task processes for each task from the task kernel, evaluated on the task inputs
-	task_means_on_grid = cluster_means[jnp.argmax(mixture.responsibilities, axis=1), ...]  # Shape (T, O, F*G)
+	task_means_on_grid = cluster_means[jnp.argmax(mixture.responsibilities, axis=1), ...]  # Shape (T, C, O*G)
 	if config.isotopic_tasks:
-		task_means = vmap(lambda t_m, m: t_m[:, m], in_axes=(0, None))(task_means_on_grid, mappings[0])  # Shape (T, O, F*N)
+		task_means = vmap(lambda t_m, m: t_m[:, m], in_axes=(0, None))(task_means_on_grid, mappings[0])  # Shape (T, C, O*N)
 	else:
-		task_means = vmap(lambda t_m, m: t_m[:, m], in_axes=(0, 0))(task_means_on_grid, mappings)  # Shape (T, O, F*N)
+		task_means = vmap(lambda t_m, m: t_m[:, m], in_axes=(0, 0))(task_means_on_grid, mappings)  # Shape (T, C, O*N)
 
 	if config.isotopic_tasks:
 		task_covs = parameters.task_kernel(inputs[0], output_ids=output_ids) + parameters.noise_kernel(inputs[0], output_ids=output_ids)
 	else:
 		task_covs = parameters.task_kernel(inputs, output_ids=output_ids) + parameters.noise_kernel(inputs, output_ids=output_ids)
-	# Shape (T, K, O, F*N, F*N), with T=1 if shared_task_hps, K=1 if not cluster_specific_task_hps and O=1 if shared_output_hps
+	# Shape (T, K, C, O*N, O*N), with T=1 if shared_task_hps, K=1 if not cluster_specific_task_hps and C=1 if shared_channel_hps
 
 	if config.cluster_specific_task_hps:
 		# Select covariance from the "right" cluster for each task
-		task_covs = task_covs[jnp.arange(len(task_covs)),jnp.argmax( mixture.responsibilities, axis=1)]  # Shape (T, O, F*N, F*N) with T=1 if shared_task_hps and O=1 if shared_output_hps
+		task_covs = task_covs[jnp.arange(len(task_covs)),jnp.argmax( mixture.responsibilities, axis=1)]  # Shape (T, C, O*N, O*N) with T=1 if shared_task_hps and C=1 if shared_channel_hps
 	else:
-		task_covs = task_covs[:, 0, ...]  # Shape (T, O, F*N, F*N) with T=1 if shared_task_hps and O=1 if shared_output_hps
+		task_covs = task_covs[:, 0, ...]  # Shape (T, C, O*N, O*N) with T=1 if shared_task_hps and C=1 if shared_channel_hps
 
 	tasks = MultivariateNormal(mean=task_means, covariance=task_covs)
 
 	if config.shared_channel_hps:
-		sample_outputs = vmap(lambda k, m, c: sample_gp(k, m, c[0], jitter=jitter), in_axes=(0, 0, None))
+		sample_channels = vmap(lambda k, m, c: sample_gp(k, m, c[0], jitter=jitter), in_axes=(0, 0, None))
 		if config.isotopic_tasks and config.shared_task_hps:
-			sample_tasks = vmap(lambda k, m, c: sample_outputs(k, m, c[0]), in_axes=(0, 0, None))
+			sample_tasks = vmap(lambda k, m, c: sample_channels(k, m, c[0]), in_axes=(0, 0, None))
 		else:
-			sample_tasks = vmap(lambda k, m, c: sample_outputs(k, m, c), in_axes=(0, 0, 0))
+			sample_tasks = vmap(lambda k, m, c: sample_channels(k, m, c), in_axes=(0, 0, 0))
 	else:
-		sample_outputs = vmap(lambda k, m, c: sample_gp(k, m, c, jitter=jitter), in_axes=(0, 0, 0))
+		sample_channels = vmap(lambda k, m, c: sample_gp(k, m, c, jitter=jitter), in_axes=(0, 0, 0))
 		if config.isotopic_tasks and config.shared_task_hps:
-			sample_tasks = vmap(lambda k, m, c: sample_outputs(k, m, c[0]), in_axes=(0, 0, None))
+			sample_tasks = vmap(lambda k, m, c: sample_channels(k, m, c[0]), in_axes=(0, 0, None))
 		else:
-			sample_tasks = vmap(lambda k, m, c: sample_outputs(k, m, c), in_axes=(0, 0, 0))
+			sample_tasks = vmap(lambda k, m, c: sample_channels(k, m, c), in_axes=(0, 0, 0))
 	key, subkey = jr.split(key)
 	subkeys = jr.split(subkey, (dims.T, dims.C))
 
-	outputs = sample_tasks(subkeys, task_means, task_covs).mT  # Shape (T, F*N, O)
+	outputs = sample_tasks(subkeys, task_means, task_covs).mT  # Shape (T, O*N, C)
 
 	dataset = Dataset(inputs=inputs, outputs=outputs)
 	grid = Grid(points=grid.points, mappings=mappings, output_ids=grid.output_ids)
@@ -545,21 +546,21 @@ class RandomDataRemover(AbstractDataRemover):
 		"""
 		See `AbstractDataRemover.__call__`.
 		"""
-		# TODO: adapt for multi-feature
-		T, N, O = dataset.outputs.shape
+		# TODO: adapt for multi-output
+		T, N, C = dataset.outputs.shape
 
-		# 1: random remove_mask, shape (T, N, O). "Which k of N points are removed" is drawn without
+		# 1: random remove_mask, shape (T, N, C). "Which k of N points are removed" is drawn without
 		# replacement by ranking iid uniform scores per row and keeping the k lowest ranks: no python loop,
-		# no vmap, works whether the row is (task,) or (task, output).
-		shape = (T, N) if config.same_missing_across_outputs else (T, O, N)
+		# no vmap, works whether the row is (task,) or (task, channel).
+		shape = (T, N) if config.same_missing_across_channels else (T, C, N)
 		key_scores, key_counts = jr.split(key)
 		ranks = jnp.argsort(jnp.argsort(jr.uniform(key_scores, shape), axis=-1), axis=-1)
 		counts = jr.randint(key_counts, shape[:-1], 0, config.max_missing + 1) if config.random_missing_count \
 			else jnp.full(shape[:-1], config.max_missing)
-		selected = ranks < counts[..., None]  # shape (T, N) or (T, O, N)
+		selected = ranks < counts[..., None]  # shape (T, N) or (T, C, N)
 
-		remove_mask = jnp.broadcast_to(selected[..., None], (T, N, O)) if config.same_missing_across_outputs \
-			else jnp.moveaxis(selected, 1, 2)  # (T, O, N) -> (T, N, O)
+		remove_mask = jnp.broadcast_to(selected[..., None], (T, N, C)) if config.same_missing_across_channels \
+			else jnp.moveaxis(selected, 1, 2)  # (T, C, N) -> (T, N, C)
 
 		# 2: remove outputs (and known noise, if any) in one line
 		outputs = jnp.where(remove_mask, jnp.nan, dataset.outputs)

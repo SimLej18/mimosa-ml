@@ -611,7 +611,7 @@ def plot_single_task_prediction(
 		Index of the channel to plot.
 	prediction
 		This task's predictive distribution at the grid points (e.g. from
-		`mimosa.prediction.predict_task_output`), for a single channel and mean-process, shape
+		`mimosa.prediction.predict_task_channel`), for a single channel and mean-process, shape
 		`(O*G,)`/`(O*G, O*G)`. Plotted as a solid mean line with a shaded confidence interval if
 		given; skipped otherwise.
 	samples

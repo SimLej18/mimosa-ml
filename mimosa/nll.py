@@ -14,20 +14,20 @@ from mimosa.data_structures import Dataset, Grid, Hyperposterior, Hyperprior
 from mimosa import DEFAULT_JITTER
 
 
-def single_output_mvn_nll(value: Array, mean: Array, cov: Array, jitter: Array = DEFAULT_JITTER) -> Array:
+def single_channel_mvn_nll(value: Array, mean: Array, cov: Array, jitter: Array = DEFAULT_JITTER) -> Array:
 	"""
-	Negative log-likelihood of a multivariate normal distribution, for a single output.
+	Negative log-likelihood of a multivariate normal distribution, for a single channel.
 
 	Handles padded data: missing points are read from NaNs in `value`.
 
 	Parameters
 	----------
 	value
-		Observed values for this output. Shape `(F*N,)`.
+		Observed values for this channel. Shape `(O*N,)`.
 	mean
-		Mean of the distribution, for this output. Shape `(F*N,)`.
+		Mean of the distribution, for this channel. Shape `(O*N,)`.
 	cov
-		Covariance of the distribution, for this output. Shape `(F*N, F*N)`.
+		Covariance of the distribution, for this channel. Shape `(O*N, O*N)`.
 	jitter
 		Diagonal jitter added before Cholesky factorization, for numerical stability.
 
@@ -35,12 +35,12 @@ def single_output_mvn_nll(value: Array, mean: Array, cov: Array, jitter: Array =
 	-------
 	Negative log-likelihood. Scalar.
 	"""
-	nan_mask = jnp.isnan(value)  # (F*N,)
+	nan_mask = jnp.isnan(value)  # (O*N,)
 
 	cov = jnp.where(nan_mask[None, :] | nan_mask[:, None], jnp.eye(cov.shape[-1]), cov)
-	cov_l = cho_factor(cov, jitter=jitter)  # Shape (F*N, F*N)
-	diff = jnp.where(nan_mask, 0., value - mean)  # Shape (F*N,)
-	y = cho_solve(cov_l, diff[:, None])[:, 0]  # Shape (F*N,)
+	cov_l = cho_factor(cov, jitter=jitter)  # Shape (O*N, O*N)
+	diff = jnp.where(nan_mask, 0., value - mean)  # Shape (O*N,)
+	y = cho_solve(cov_l, diff[:, None])[:, 0]  # Shape (O*N,)
 
 	data_fit = jnp.sum(diff * y)
 	penalty = 2 * jnp.sum(jnp.log(jnp.diagonal(cov_l)))
@@ -51,43 +51,43 @@ def single_output_mvn_nll(value: Array, mean: Array, cov: Array, jitter: Array =
 
 def mvn_nll(values: Array, mean: Array, cov: Array, jitter: Array = DEFAULT_JITTER) -> Array:
 	"""
-	Negative log-likelihood of a multivariate normal distribution, vmapped across outputs.
+	Negative log-likelihood of a multivariate normal distribution, vmapped across channels.
 
-	See `single_output_mvn_nll`.
+	See `single_channel_mvn_nll`.
 
 	Parameters
 	----------
 	values
-		Observed values for each output. Shape `(F*N, O)`.
+		Observed values for each channel. Shape `(O*N, C)`.
 	mean
-		Mean of the distribution. Shape `(O, F*N)`, with `O=1` if `shared_output_hps`.
+		Mean of the distribution. Shape `(C, O*N)`, with `C=1` if `shared_channel_hps`.
 	cov
-		Covariance of the distribution. Shape `(O, F*N, F*N)`, with `O=1` if `shared_output_hps`.
+		Covariance of the distribution. Shape `(C, O*N, O*N)`, with `C=1` if `shared_channel_hps`.
 	jitter
 		Diagonal jitter added before Cholesky factorization, for numerical stability.
 
 	Returns
 	-------
-	Negative log-likelihood of each output. Shape `(O,)`.
+	Negative log-likelihood of each channel. Shape `(C,)`.
 	"""
-	return vmap(single_output_mvn_nll, in_axes=(0, 0, 0, None))(values.T, mean, cov, jitter)
+	return vmap(single_channel_mvn_nll, in_axes=(0, 0, 0, None))(values.T, mean, cov, jitter)
 
 
-def single_output_trace_correction(value: Array, cov: Array, post_cov: Array, jitter: Array = DEFAULT_JITTER) -> Array:
+def single_channel_trace_correction(value: Array, cov: Array, post_cov: Array, jitter: Array = DEFAULT_JITTER) -> Array:
 	"""
 	Trace correction term that adapts the negative log-likelihood of a MVN to the Magma algorithm,
-	for a single output: `0.5 * trace(post_cov @ inv(cov))`.
+	for a single channel: `0.5 * trace(post_cov @ inv(cov))`.
 
 	Handles padded data: missing points are read from NaNs in `value`.
 
 	Parameters
 	----------
 	value
-		Observed values for this output, used only for their NaN pattern (missing points). Shape `(F*N,)`.
+		Observed values for this channel, used only for their NaN pattern (missing points). Shape `(O*N,)`.
 	cov
-		Covariance of the task or mean process, for this output. Shape `(F*N, F*N)`.
+		Covariance of the task or mean process, for this channel. Shape `(O*N, O*N)`.
 	post_cov
-		Posterior covariance of a specific mean process, for this output. Shape `(F*N, F*N)`.
+		Posterior covariance of a specific mean process, for this channel. Shape `(O*N, O*N)`.
 	jitter
 		Diagonal jitter added before Cholesky factorization, for numerical stability.
 
@@ -95,14 +95,14 @@ def single_output_trace_correction(value: Array, cov: Array, post_cov: Array, ji
 	-------
 	Trace correction term. Scalar.
 	"""
-	nan_mask = jnp.isnan(value)  # (F*N,)
+	nan_mask = jnp.isnan(value)  # (O*N,)
 	nan_mask_2d = nan_mask[None, :] | nan_mask[:, None]
 	eye = jnp.eye(cov.shape[-1])
 
 	post_cov = jnp.where(nan_mask_2d, eye, post_cov)
-	post_cov_l = cho_factor(post_cov, jitter=jitter)  # Shape (F*N, F*N)
+	post_cov_l = cho_factor(post_cov, jitter=jitter)  # Shape (O*N, O*N)
 	cov = jnp.where(nan_mask_2d, eye, cov)
-	cov_l = cho_factor(cov, jitter=jitter)  # Shape (F*N, F*N)
+	cov_l = cho_factor(cov, jitter=jitter)  # Shape (O*N, O*N)
 
 	v = jsp.linalg.solve_triangular(cov_l, post_cov_l, lower=True)
 	return 0.5 * (jnp.sum(v ** 2) - jnp.sum(nan_mask))
@@ -111,29 +111,29 @@ def single_output_trace_correction(value: Array, cov: Array, post_cov: Array, ji
 def trace_correction(values: Array, cov: Array, post_cov: Array, jitter: Array = DEFAULT_JITTER) -> Array:
 	"""
 	Trace correction term that adapts the negative log-likelihood of a MVN to the Magma algorithm,
-	vmapped across outputs.
+	vmapped across channels.
 
-	See `single_output_trace_correction`.
+	See `single_channel_trace_correction`.
 
 	Parameters
 	----------
 	values
-		Observed values for each output, used only for their NaN pattern (missing points). Shape `(F*N, O)`.
+		Observed values for each channel, used only for their NaN pattern (missing points). Shape `(O*N, C)`.
 	cov
-		Covariance of the task or mean process. Shape `(O, F*N, F*N)`, with `O=1` if `shared_output_hps`.
+		Covariance of the task or mean process. Shape `(C, O*N, O*N)`, with `C=1` if `shared_channel_hps`.
 	post_cov
-		Posterior covariance of a specific mean process. Shape `(O, F*N, F*N)`, with `O=1` if `shared_output_hps`.
+		Posterior covariance of a specific mean process. Shape `(C, O*N, O*N)`, with `C=1` if `shared_channel_hps`.
 	jitter
 		Diagonal jitter added before Cholesky factorization, for numerical stability.
 
 	Returns
 	-------
-	Trace correction term of each output. Shape `(O,)`.
+	Trace correction term of each channel. Shape `(C,)`.
 	"""
-	O = values.shape[-1]
-	cov = jnp.broadcast_to(cov, (O,) + cov.shape[-2:])
-	post_cov = jnp.broadcast_to(post_cov, (O,) + post_cov.shape[-2:])
-	return vmap(single_output_trace_correction, in_axes=(0, 0, 0, None))(values.T, cov, post_cov, jitter)
+	C = values.shape[-1]
+	cov = jnp.broadcast_to(cov, (C,) + cov.shape[-2:])
+	post_cov = jnp.broadcast_to(post_cov, (C,) + post_cov.shape[-2:])
+	return vmap(single_channel_trace_correction, in_axes=(0, 0, 0, None))(values.T, cov, post_cov, jitter)
 
 
 def magma_nll(values: Array, mean: Array, cov: Array, post_cov: Array, jitter: Array = DEFAULT_JITTER) -> Array:
@@ -144,19 +144,19 @@ def magma_nll(values: Array, mean: Array, cov: Array, post_cov: Array, jitter: A
 	Parameters
 	----------
 	values
-		Observed values for each output. Shape `(F*N, O)`.
+		Observed values for each channel. Shape `(O*N, C)`.
 	mean
-		Posterior mean of a specific mean process. Shape `(O, F*G)`, with `O=1` if `shared_output_hps`.
+		Posterior mean of a specific mean process. Shape `(C, O*G)`, with `C=1` if `shared_channel_hps`.
 	cov
-		Covariance of the task or mean process. Shape `(O, F*N, F*N)`, with `O=1` if `shared_output_hps`.
+		Covariance of the task or mean process. Shape `(C, O*N, O*N)`, with `C=1` if `shared_channel_hps`.
 	post_cov
-		Posterior covariance of a specific mean process. Shape `(O, F*G, F*G)`, with `O=1` if `shared_output_hps`.
+		Posterior covariance of a specific mean process. Shape `(C, O*G, O*G)`, with `C=1` if `shared_channel_hps`.
 	jitter
 		Diagonal jitter added before Cholesky factorization, for numerical stability.
 
 	Returns
 	-------
-	Negative log-likelihood of each output. Shape `(O,)`.
+	Negative log-likelihood of each channel. Shape `(C,)`.
 	"""
 	return mvn_nll(values, mean, cov, jitter=jitter) + trace_correction(values, cov, post_cov, jitter=jitter)
 
@@ -164,7 +164,7 @@ def magma_nll(values: Array, mean: Array, cov: Array, post_cov: Array, jitter: A
 def clusters_nlls(hyperposterior: Hyperposterior, hyperprior: Hyperprior,
                   jitter: Array = DEFAULT_JITTER) -> Array:
 	"""
-	Negative log-likelihood of every mean-process, for each output, under its prior.
+	Negative log-likelihood of every mean-process, for each channel, under its prior.
 
 	Parameters
 	----------
@@ -177,7 +177,7 @@ def clusters_nlls(hyperposterior: Hyperposterior, hyperprior: Hyperprior,
 
 	Returns
 	-------
-	Negative log-likelihood of every mean-process, for each output. Shape `(K, O)`.
+	Negative log-likelihood of every mean-process, for each channel. Shape `(K, C)`.
 	"""
 	hyperprior = Hyperprior(
 		mean=jnp.broadcast_to(hyperprior.mean, hyperposterior.mean.shape),
@@ -190,7 +190,7 @@ def clusters_nlls(hyperposterior: Hyperposterior, hyperprior: Hyperprior,
 def tasks_nlls(dataset: Dataset, grid: Grid, task_covs: Array, hyperposterior: Hyperposterior,
                jitter: Array = DEFAULT_JITTER) -> Array:
 	"""
-	Negative log-likelihood of every task, under each mean-process, for each output.
+	Negative log-likelihood of every task, under each mean-process, for each channel.
 
 	Parameters
 	----------
@@ -199,8 +199,8 @@ def tasks_nlls(dataset: Dataset, grid: Grid, task_covs: Array, hyperposterior: H
 	grid
 		Grid of points and mappings of `dataset`'s inputs onto it.
 	task_covs
-		Task covariance (including noise) of every task. Shape `(T, K, O, F*N, F*N)`, with `T=1` if
-		`shared_task_hps`, `K=1` if `shared_cluster_hps` and `O=1` if `shared_output_hps`.
+		Task covariance (including noise) of every task. Shape `(T, K, C, O*N, O*N)`, with `T=1` if
+		`shared_task_hps`, `K=1` if `shared_cluster_hps` and `C=1` if `shared_channel_hps`.
 	hyperposterior
 		Posterior distribution over each mean-process's values at the grid points.
 	jitter
@@ -208,7 +208,7 @@ def tasks_nlls(dataset: Dataset, grid: Grid, task_covs: Array, hyperposterior: H
 
 	Returns
 	-------
-	Negative log-likelihood of every task, under each mean-process, for each output. Shape `(T, K, O)`.
+	Negative log-likelihood of every task, under each mean-process, for each channel. Shape `(T, K, C)`.
 	"""
 	# A nice trick we can use in this function is that it can just be a vmap over `full_nll`, providing only the right
 	# portions of post_means and post_covs to each task depending on the mappings.

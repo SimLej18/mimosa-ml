@@ -3,7 +3,7 @@ Basic usage example of mimosa-ml.
 
 Walks through the full pipeline: configure dimensions -> generate a synthetic dataset and remove
 some points at random -> plot the raw dataset -> fit a BasicModel -> plot the fitted clusters ->
-predict a task's output -> plot the prediction (mean + confidence interval) and samples from it.
+predict a task's channel -> plot the prediction (mean + confidence interval) and samples from it.
 
 Meant to be run cell-by-cell (e.g. in PyCharm/VSCode's "#%%" notebook mode), or as a plain script.
 """
@@ -30,12 +30,12 @@ key = jr.PRNGKey(42)
 plt.rcParams['figure.dpi']=300
 
 #%% 1. Configuration
-# Dimensions: T tasks, K clusters, I/O input/output dims, N points observed
-# per task, G points in the full grid.
+# Dimensions: T tasks, K clusters, I input dims, C channels, O correlated outputs, N points
+# observed per task, G points in the full grid.
 dims = Dimensions(T=32, K=2, I=1, C=2, O=1, N=50, G=150)
 
-# ModelConfig controls which hyperparameters are shared (across tasks/clusters/outputs/features) and
-# whether tasks/features share input locations.
+# ModelConfig controls which hyperparameters are shared (across tasks/clusters/channels/outputs) and
+# whether tasks/outputs share input locations.
 model_config = ModelConfig(
 	shared_task_hps=True,
 	shared_cluster_hps=True,
@@ -45,7 +45,7 @@ model_config = ModelConfig(
 )
 
 # How many points to remove at random per task, to simulate missing data.
-removal_config = DataRemovalConfig(max_missing=5, random_missing_count=True, same_missing_across_outputs=False)
+removal_config = DataRemovalConfig(max_missing=5, random_missing_count=True, same_missing_across_channels=False)
 
 #%% 2. Generative parameters
 # These are the "true" parameters used to synthesise the toy dataset below. Swap any kernel/mean for
@@ -62,7 +62,7 @@ true_params = Parameters(
 key, gen_key, removal_key = jr.split(key, 3)
 
 dataset, grid, hyperprior, true_mixture, true_params, cluster_means, tasks = generate_data(
-	gen_key, dims, true_params, model_config, input_range=(-2.5, 2.5)
+	gen_key, dims, true_params, model_config, input_range=[(-2.5, 2.5)]
 )
 dataset = RandomDataRemover()(removal_key, dataset, removal_config)
 
@@ -72,7 +72,7 @@ save_csv("./dummy.csv", dataset)
 dataset = load_csv("./dummy.csv")
 
 #%% 4. Plot the raw dataset (coloured by each task's true cluster)
-fig, ax = plot_dataset(dataset, mixture=true_mixture, figsize=(8 * dims.C, 6))
+fig, ax = plot_dataset(dataset, dims, mixture=true_mixture, figsize=(8 * dims.C, 6))
 fig.suptitle("Synthetic dataset (colored by true cluster)")
 plt.show()
 
@@ -108,33 +108,33 @@ fitted_params, fitted_mixture = model.fit(dataset, fitted_grid, mixture_proporti
 #%% 7. Plot the fitted clusters (mean-processes)
 hyperposterior = model.hyperpost(dataset, fitted_grid, fitted_mixture, fitted_params, jitter=model.jitter)
 
-fig, ax = plot_dataset(dataset, mixture=true_mixture, figsize=(8 * dims.C, 6), alpha=.1)
-fig, ax = plot_clusters(fitted_grid, hyperposterior=hyperposterior, figsize=(8 * dims.C, 6), fig=fig, ax=ax)
+fig, ax = plot_dataset(dataset, dims, mixture=true_mixture, figsize=(8 * dims.C, 6), alpha=.1)
+fig, ax = plot_clusters(fitted_grid, dims, hyperposterior=hyperposterior, figsize=(8 * dims.C, 6), fig=fig, ax=ax)
 fig.suptitle("Fitted clusters (mean-processes) on the dataset")
 plt.show()
 
 #%% 8. Predict
-predictions = model.predict(dataset, fitted_grid, fitted_mixture, fitted_params)  # MultivariateNormal, batched (T, K, O, G)
+predictions = model.predict(dataset, fitted_grid, fitted_mixture, fitted_params)  # MultivariateNormal, batched (T, K, C, O*G)
 
-t_id, o_id = 0, 0
+t_id, c_id = 0, 0
 k_id = int(fitted_mixture.assignments[t_id])  # task's dominant cluster
-prediction = predictions[t_id, k_id, o_id]
+prediction = predictions[t_id, k_id, c_id]
 
 #%% 9. Plot the prediction: observed points, cluster means, and predictive mean + confidence interval
 fig, ax = plot_single_task_prediction(
-	dataset, fitted_grid, hyperposterior, fitted_mixture, t_id, o_id, prediction=prediction, figsize=(8 * dims.C, 6)
+	dataset, fitted_grid, dims, hyperposterior, fitted_mixture, t_id, c_id, prediction=prediction, figsize=(8 * dims.C, 6)
 )
-fig.suptitle(f"Prediction — task {t_id}, output {o_id}")
+fig.suptitle(f"Prediction — task {t_id}, channel {c_id}")
 plt.show()
 
 #%% 10. Draw samples from the prediction and plot them alongside it
 key, sample_key = jr.split(key)
 n_samples = 64
 sample_keys = jr.split(sample_key, n_samples)
-samples = vmap(lambda k: sample_gp(k, prediction.mean, prediction.covariance))(sample_keys)  # (S, G)
+samples = vmap(lambda k: sample_gp(k, prediction.mean, prediction.covariance))(sample_keys)  # (S, O*G)
 
 fig, ax = plot_single_task_prediction(
-	dataset, fitted_grid, hyperposterior, fitted_mixture, t_id, o_id, samples=samples, figsize=(8 * dims.C, 6)
+	dataset, fitted_grid, dims, hyperposterior, fitted_mixture, t_id, c_id, samples=samples, figsize=(8 * dims.C, 6)
 )
-fig.suptitle(f"Prediction samples — task {t_id}, output {o_id}")
+fig.suptitle(f"Prediction samples — task {t_id}, channel {c_id}")
 plt.show()

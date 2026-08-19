@@ -76,9 +76,9 @@ class ModelConfig:
 	shared_cluster_hps
 		If True, cluster-kernel hyperparameters are shared across mean-processes; if False, each mean-process has its own.
 	shared_channel_hps
-		If True, hyperparameters are shared across channel dimensions; if False, each output has its own.
+		If True, hyperparameters are shared across channel dimensions; if False, each channel has its own.
 	shared_output_hps
-		If True, hyperparameters are shared across features; if False, each feature has its own.
+		If True, hyperparameters are shared across outputs; if False, each output has its own.
 	cluster_specific_task_hps
 		If True, task-kernel hyperparameters may additionally vary by cluster assignment, independently of `shared_task_hps`.
 	isotopic_tasks
@@ -109,15 +109,15 @@ class DataRemovalConfig:
 		Maximum number of missing points per task.
 	random_missing_count
 		If True, the number of missing points is drawn randomly in [0, `max_missing`]; if False, it is fixed to `max_missing`.
+	same_missing_across_channels
+		If True, a missing point is missing for every channel; if False, missingness is drawn independently per channel.
 	same_missing_across_outputs
 		If True, a missing point is missing for every output; if False, missingness is drawn independently per output.
-	same_missing_across_features
-		If True, a missing point is missing for every feature; if False, missingness is drawn independently per feature.
 	"""
 	max_missing: int
 	random_missing_count: bool = False
+	same_missing_across_channels: bool = True
 	same_missing_across_outputs: bool = True
-	same_missing_across_features: bool = True
 
 
 def validate_model_config(model_config: ModelConfig, dimensions: Dimensions) -> None:
@@ -202,14 +202,14 @@ class Dataset(eqx.Module):
 	Attributes
 	----------
 	inputs
-		Input points of each task. Shape is `(T, N, I)` when features share the same input locations
-		(isotopic features), or `(T, F*N, I)` otherwise.
+		Input points of each task. Shape is `(T, N, I)` when outputs share the same input locations
+		(isotopic outputs), or `(T, O*N, I)` otherwise.
 	outputs
-		Output values of each task, at each feature and input point.
+		Output values of each task, at each output and input point.
 	known_output_noise
 		Known observation noise, when available.
 	output_ids
-		IDs of the output of each input point. None if isotopic outputs. Else, shape `(T, F*N)`.
+		IDs of the output of each input point. None if isotopic outputs. Else, shape `(T, O*N)`.
 	"""
 	inputs: Float[Array, "#T oN I"]  # "o" is 1 if isotopic_output_in_tasks and dims.O otherwise
 	outputs: Float[Array, "T ON C"]
@@ -227,7 +227,7 @@ class Grid(eqx.Module):
 	points
 		Input points of the grid.
 	output_ids
-		IDs of the output of each grid point. None if isotopic outputs. Else, shape `(F*G,)`. Defaults to `None`.
+		IDs of the output of each grid point. None if isotopic outputs. Else, shape `(O*G,)`. Defaults to `None`.
 	mappings
 		Index of each task's input points in `points`. Defaults to `None`.
 	"""

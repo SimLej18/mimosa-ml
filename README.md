@@ -52,7 +52,7 @@ We basically took Gaussian processes, and combined them with a ton of ✨*fancy 
 * ➡️ Multi-task learning based on [Magma](https://jmlr.org/papers/v24/20-1321.html)
 * ➡️ Clustering as a mixture of Magma GPs
 * ➡️ Multi-dimensional inputs thanks to efficient kernels from [Kernax](https://github.com/SimLej18/kernax-ml)
-* ➡️ Multi-dimensional uncorrelated outputs by simply broadcasting the algorithm to another dimension
+* ➡️ Multi-dimensional uncorrelated channels by simply broadcasting the algorithm to another dimension
 * ➡️ Multi-output correlation discovery by learning a [convolution process]([TODO]) with specific kernel
 
 
@@ -99,7 +99,7 @@ init_params = Parameters(
 
 key, subkey = jr.split(key)
 dataset, grid, hyperprior, mixture, parameters, cluster_means, tasks = generate_data(
-	subkey, dims, init_params, config, input_range=(-2.5, 2.5))
+	subkey, dims, init_params, config, input_range=[(-2.5, 2.5)])
 
 # Fit a model on the generated dataset, starting from the same parameters
 fit_grid = UnionGrid()(dataset.inputs)
@@ -111,24 +111,24 @@ predictions = model.predict(dataset, fit_grid, fitted_mixture, fitted_params)
 hyperposterior = model.hyperpost(dataset, fit_grid, fitted_mixture, fitted_params)
 
 # Plot the fitted mean-processes over the dataset
-fig, ax = plot_dataset(dataset, mixture=mixture, alpha=.3)
-fig, ax = plot_clusters(fit_grid, hyperposterior=hyperposterior, fig=fig, ax=ax, legend=False)
+fig, ax = plot_dataset(dataset, dims, mixture=mixture, alpha=.3)
+fig, ax = plot_clusters(fit_grid, dims, hyperposterior=hyperposterior, fig=fig, ax=ax, legend=False)
 ```
 
 ![Fitted mean-processes over the dataset](docs/images/mean_processes.png)
 
 ```python
 # Draw samples from task 0's predictive distribution and plot them
-t_id, o_id = 0, 0
+t_id, c_id = 0, 0
 k_id = int(fitted_mixture.assignments[t_id])  # task's dominant cluster
-prediction = predictions[t_id, k_id, o_id]
+prediction = predictions[t_id, k_id, c_id]
 
 key, sample_key = jr.split(key)
 sample_keys = jr.split(sample_key, 64)
 samples = vmap(lambda k: sample_gp(k, prediction.mean, prediction.covariance))(sample_keys)
 
 fig, ax = plot_single_task_prediction(
-	dataset, fit_grid, hyperposterior, fitted_mixture, t_id, o_id, samples=samples)
+	dataset, fit_grid, dims, hyperposterior, fitted_mixture, t_id, c_id, samples=samples)
 ```
 
 ![Prediction samples for task 0](docs/images/task0_prediction_samples.png)
@@ -146,11 +146,12 @@ Here is a quick overview of what each configuration option does.
 
 * `shared_task_hps` (default `True`): whether task kernel/noise hyper-parameters are shared across all tasks, or learnt independently per task.
 * `shared_cluster_hps` (default `True`): whether cluster mean/kernel hyper-parameters are shared across all clusters (mean-processes), or learnt independently per cluster.
-* `shared_output_hps` (default `True`): whether hyper-parameters are shared across output dimensions, or learnt independently per output.
-* `shared_features_hps` (default `True`): whether hyper-parameters are shared across features, or learnt independently per feature.
+* `shared_channel_hps` (default `True`): whether hyper-parameters are shared across channel dimensions, or learnt independently per channel.
+* `shared_output_hps` (default `True`): whether hyper-parameters are shared across outputs, or learnt independently per output.
 * `cluster_specific_task_hps` (default `True`): whether the task/noise kernels themselves vary depending on the cluster a task belongs to, or are shared across clusters.
 * `isotopic_tasks` (default `True`): whether all tasks are observed at the same input locations, or each task has its own set of inputs.
-* `isotopic_features` (default `True`): whether all features are observed at the same input locations, or each feature has its own set of inputs.
+* `isotopic_output_in_tasks` (default `True`): whether all outputs of a task are observed at the same input locations, or each output has its own set of inputs within a task.
+* `isotopic_output_in_grid` (default `True`): whether all outputs share the same grid locations, or each output has its own set of grid locations.
 
 These configurations are independent of your choices of parameters (mean functions/kernels), leading to a large
 number of ways to model your data.
@@ -189,7 +190,7 @@ MIMOSA is primarily developed by the *Magma Task Force*, composed of:
 
 * [Arthur Leroy](https://arthur-leroy.netlify.app/), researcher at Paris Saclay and INRAe (FR), main author of the original tool [MagmaClustR](https://arthurleroy.github.io/MagmaClustR/) and coordinator of the Task Force.
 * [Simon Lejoly](https://researchportal.unamur.be/fr/persons/slejoly/), PhD student at UNamur (BE), main developper of the package and author of the [Kernax package](https://github.com/SimLej18/kernax-ml)
-* [Alexia Grenouillat]([TODO]), PhD student at INSA Toulouse (FR), developper of multi-feature correlation discovery.
+* [Alexia Grenouillat]([TODO]), PhD student at INSA Toulouse (FR), developper of multi-output correlation discovery.
 * [Térence Viellard]([TODO]), PhD student at INRAe (FR), working on sparse approximations and scalability.
 
 If you use the package for your research, please consider citing the following paper:

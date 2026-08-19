@@ -27,7 +27,7 @@ init_params = Parameters(
 
 key, subkey = jr.split(key)
 dataset, grid, hyperprior, mixture, parameters, cluster_means, tasks = generate_data(
-	subkey, dims, init_params, config, input_range=(-2.5, 2.5))
+	subkey, dims, init_params, config, input_range=[(-2.5, 2.5)])
 
 # Fit a model on the generated dataset, starting from the same parameters
 fit_grid = UnionGrid()(dataset.inputs)
@@ -39,19 +39,19 @@ predictions = model.predict(dataset, fit_grid, fitted_mixture, fitted_params)
 hyperposterior = model.hyperpost(dataset, fit_grid, fitted_mixture, fitted_params)
 
 # Plot the fitted mean-processes over the dataset
-fig, ax = plot_dataset(dataset, mixture=mixture, alpha=.3)
-fig, ax = plot_clusters(fit_grid, hyperposterior=hyperposterior, fig=fig, ax=ax, legend=False)
+fig, ax = plot_dataset(dataset, dims, mixture=mixture, alpha=.3)
+fig, ax = plot_clusters(fit_grid, dims, hyperposterior=hyperposterior, fig=fig, ax=ax, legend=False)
 fig.show()
 
 # Draw samples from task 0's predictive distribution and plot them
-t_id, o_id = 0, 0
+t_id, c_id = 0, 0
 k_id = int(fitted_mixture.assignments[t_id])  # task's dominant cluster
-prediction = predictions[t_id, k_id, o_id]
+prediction = predictions[t_id, k_id, c_id]
 
 key, sample_key = jr.split(key)
 sample_keys = jr.split(sample_key, 64)
 samples = vmap(lambda k: sample_gp(k, prediction.mean, prediction.covariance))(sample_keys)
 
 fig, ax = plot_single_task_prediction(
-	dataset, fit_grid, hyperposterior, fitted_mixture, t_id, o_id, samples=samples)
+	dataset, fit_grid, dims, hyperposterior, fitted_mixture, t_id, c_id, samples=samples)
 fig.show()

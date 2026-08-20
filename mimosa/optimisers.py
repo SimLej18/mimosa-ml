@@ -55,7 +55,7 @@ def optimise_clusters(
 		mean = params[0] if frozen[0] is None else combine(params[0], frozen[0])
 		kern = params[1] if frozen[1] is None else combine(params[1], frozen[1])
 
-		hyperprior = Hyperprior(mean=mean(grid.points), covariance=kern(grid.points))
+		hyperprior = Hyperprior(mean=mean(grid.points, output_ids=grid.output_ids), covariance=kern(grid.points, output_ids=grid.output_ids))
 
 		return clusters_nlls(hyperposterior, hyperprior, jitter=jitter).sum()
 
@@ -105,10 +105,16 @@ def optimise_tasks(
 	def loss_fn(params, frozen):
 		kern = params if frozen is None else combine(params, frozen)
 
+		if dataset.inputs.shape[0] == 1:
+			output_ids = dataset.output_ids[0] if dataset.output_ids is not None else None
+			task_covs = kern(dataset.clean_inputs[0], output_ids=output_ids)
+		else:
+			task_covs = kern(dataset.clean_inputs, output_ids=dataset.output_ids)
+
 		return (tasks_nlls(
 			dataset,
 			grid,
-			kern(dataset.inputs[0]) if dataset.inputs.shape[0] == 1 else kern(dataset.inputs),
+			task_covs,
 			hyperposterior,
 			jitter=jitter) * mixture.responsibilities[..., None]).sum()
 
@@ -151,7 +157,7 @@ class ClusterOptimiser(eqx.Module):
 			mean = params[0] if frozen[0] is None else combine(params[0], frozen[0])
 			kern = params[1] if frozen[1] is None else combine(params[1], frozen[1])
 
-			hyperprior = Hyperprior(mean=mean(grid.points), covariance=kern(grid.points))
+			hyperprior = Hyperprior(mean=mean(grid.points, output_ids=grid.output_ids), covariance=kern(grid.points, output_ids=grid.output_ids))
 
 			return self.nll(hyperposterior, hyperprior, jitter=jitter).sum()
 
@@ -193,7 +199,11 @@ class TaskOptimiser(eqx.Module):
 		def loss_fn(params, frozen):
 			kern = params if frozen is None else combine(params, frozen)
 
-			task_covs = kern(dataset.inputs[0]) if dataset.inputs.shape[0] == 1 else kern(dataset.inputs)
+			if dataset.inputs.shape[0] == 1:
+				output_ids = dataset.output_ids[0] if dataset.output_ids is not None else None
+				task_covs = kern(dataset.clean_inputs[0], output_ids=output_ids)
+			else:
+				task_covs = kern(dataset.clean_inputs, output_ids=dataset.output_ids)
 
 			return (self.nll(dataset, grid, task_covs, hyperposterior, jitter=jitter) * mixture.responsibilities[..., None]).sum()
 

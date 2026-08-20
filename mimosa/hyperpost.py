@@ -168,9 +168,9 @@ def hyperpost(dataset: Dataset, grid: Grid, mixture: Mixture, parameters: Parame
 
 	if dataset.inputs.shape[0] == 1:
 		output_ids = dataset.output_ids[0] if dataset.output_ids is not None else None
-		task_covs = parameters.task_kernel(dataset.inputs[0], output_ids=output_ids) + parameters.noise_kernel(dataset.inputs[0], output_ids=output_ids)  # Shape: (T, K, C, O*N, O*N) with
+		task_covs = parameters.task_kernel(dataset.clean_inputs[0], output_ids=output_ids) + parameters.noise_kernel(dataset.clean_inputs[0], output_ids=output_ids)  # Shape: (T, K, C, O*N, O*N) with
 	else:
-		task_covs = parameters.task_kernel(dataset.inputs, output_ids=dataset.output_ids) + parameters.noise_kernel(dataset.inputs, output_ids=dataset.output_ids)
+		task_covs = parameters.task_kernel(dataset.clean_inputs, output_ids=dataset.output_ids) + parameters.noise_kernel(dataset.clean_inputs, output_ids=dataset.output_ids)
 
 	# Shape: (T, K, C, O*N, O*N) with
 	# T=1 if shared_inputs_in_tasks, shared_task_hps and no cluster_specific_task_hps

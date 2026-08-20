@@ -94,9 +94,9 @@ def update_mixture(dataset: Dataset, grid: Grid, task_kernel: AbstractKernel, hy
 	"""
 	if dataset.inputs.shape[0] == 1:
 		output_ids = dataset.output_ids[0] if dataset.output_ids is not None else None
-		task_llhs = jnp.sum(tasks_nlls(dataset, grid, task_kernel(dataset.inputs[0], output_ids=output_ids), hyperposterior, jitter=jitter), axis=-1)
+		task_llhs = jnp.sum(tasks_nlls(dataset, grid, task_kernel(dataset.clean_inputs[0], output_ids=output_ids), hyperposterior, jitter=jitter), axis=-1)
 	else:
-		task_llhs = jnp.sum(tasks_nlls(dataset, grid, task_kernel(dataset.inputs, output_ids=dataset.output_ids), hyperposterior, jitter=jitter), axis=-1)
+		task_llhs = jnp.sum(tasks_nlls(dataset, grid, task_kernel(dataset.clean_inputs, output_ids=dataset.output_ids), hyperposterior, jitter=jitter), axis=-1)
 	return Mixture(proportions=mixture.proportions, responsibilities=softmax(jnp.log(mixture.proportions[None, :]) - task_llhs, axis=1))
 
 

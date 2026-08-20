@@ -153,6 +153,40 @@ def predict_clusters(task_outputs: Array,
 	)(task_outputs, post_mean_blocks, cov_blocks, jitter)
 
 
+def _cross_grid(grid: Grid, output_ids: None | Array, hyperposterior: Hyperposterior) -> tuple[Array, None | Array]:
+	"""
+	Grid points/output_ids to cross-covary against points labelled by `output_ids`.
+
+	kernax's multi-output kernels require *both* sides of a 2-argument call to carry `output_ids`,
+	or neither -- so when `grid.points` is an isotopic, unlabelled pool (`grid.output_ids is None`)
+	but `output_ids` isn't, tile+label the grid side to match it (one copy per output). Otherwise
+	(`output_ids is None`, or `grid.output_ids` is already set) `grid.points`/`grid.output_ids` are
+	already consistent and are returned unchanged.
+
+	Parameters
+	----------
+	grid
+		Grid whose points are being cross-covaried against `output_ids`-labelled points.
+	output_ids
+		Output ids of the points `grid` is being cross-covaried against (e.g. `dataset.output_ids`).
+	hyperposterior
+		Posterior distribution over every mean-process's values at the grid points, used to read off
+		the number of outputs from its shape (`hyperposterior.mean.shape[-1] // len(grid.points)`)
+		rather than `output_ids.max()`, which -- unlike a shape -- isn't known under `jit`.
+
+	Returns
+	-------
+	points, output_ids
+		`grid.points`/`grid.output_ids`, expanded and labelled if needed.
+	"""
+	if output_ids is None or grid.output_ids is not None:
+		return grid.points, grid.output_ids
+	n_outputs = hyperposterior.mean.shape[-1] // len(grid.points)
+	points = jnp.tile(grid.points, (n_outputs, 1))
+	ids = jnp.repeat(jnp.arange(n_outputs), len(grid.points))
+	return points, ids
+
+
 def predict(dataset: Dataset,
             grid: Grid,
             hyperposterior: Hyperposterior,
@@ -181,25 +215,31 @@ def predict(dataset: Dataset,
 	Predicted distribution over every task's outputs at the grid points, batched over tasks,
 	mean-processes and channel dimensions.
 	"""
+	cross_points, cross_ids = _cross_grid(grid, dataset.output_ids, hyperposterior)
+
 	if dataset.inputs.shape[0] == 1:
 		extended_grid = grid.points
 		output_ids = dataset.output_ids[0] if dataset.output_ids is not None else None
 		task_cov_blocks = PredictionCovBlocks(
-			cov_obs=parameters.task_kernel(dataset.inputs[0], output_ids=output_ids)
-			        + parameters.noise_kernel(dataset.inputs[0], output_ids=output_ids),
+			cov_obs=parameters.task_kernel(dataset.clean_inputs[0], output_ids=output_ids)
+			        + parameters.noise_kernel(dataset.clean_inputs[0], output_ids=output_ids),
 			cov_grid=parameters.task_kernel(extended_grid, output_ids=grid.output_ids),
-			cov_crossed=parameters.task_kernel(dataset.inputs[0], extended_grid, output_ids=output_ids, output_ids2=grid.output_ids),
+			cov_crossed=parameters.task_kernel(dataset.clean_inputs[0], cross_points, output_ids=output_ids, output_ids2=cross_ids),
 		)
 	else:
 		extended_grid = jnp.broadcast_to(grid.points, dataset.inputs.shape[:1] + grid.points.shape)
-		# extended_grid gains a leading T axis, so any output_ids passed alongside it must too.
+		extended_cross_points = jnp.broadcast_to(cross_points, dataset.inputs.shape[:1] + cross_points.shape)
+		# extended_grid/extended_cross_points gain a leading T axis, so any output_ids passed
+		# alongside them must too.
 		extended_grid_ids = None if grid.output_ids is None \
 			else jnp.broadcast_to(grid.output_ids, dataset.inputs.shape[:1] + grid.output_ids.shape)
+		extended_cross_ids = None if cross_ids is None \
+			else jnp.broadcast_to(cross_ids, dataset.inputs.shape[:1] + cross_ids.shape)
 		task_cov_blocks = PredictionCovBlocks(
-			cov_obs=parameters.task_kernel(dataset.inputs, output_ids=dataset.output_ids)
-			        + parameters.noise_kernel(dataset.inputs, output_ids=dataset.output_ids),
+			cov_obs=parameters.task_kernel(dataset.clean_inputs, output_ids=dataset.output_ids)
+			        + parameters.noise_kernel(dataset.clean_inputs, output_ids=dataset.output_ids),
 			cov_grid=parameters.task_kernel(extended_grid, output_ids=extended_grid_ids),
-			cov_crossed=parameters.task_kernel(dataset.inputs, extended_grid, output_ids=dataset.output_ids, output_ids2=extended_grid_ids),
+			cov_crossed=parameters.task_kernel(dataset.clean_inputs, extended_cross_points, output_ids=dataset.output_ids, output_ids2=extended_cross_ids),
 		)
 
 	mappings = grid.mappings[0] if dataset.inputs.shape[0] == 1 else grid.mappings

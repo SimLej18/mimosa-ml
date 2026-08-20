@@ -233,7 +233,16 @@ def merge_multioutput_datasets(datasets: Sequence[Dataset]) -> Dataset:
 			for d in datasets
 		], axis=1)
 
-	output_ids = jnp.concatenate([jnp.full((d.outputs.shape[1],), o, dtype=int) for o, d in enumerate(datasets)])[None, :]
+	# If every output shares the exact same input locations, output_ids is redundant -- collapse
+	# back to the compact `None` (isotopic_output_in_tasks) representation, so a dataset that was
+	# isotopic before going through `split_into_single_output_datasets`/CSV round-trips back to
+	# being isotopic, instead of gaining a spurious per-row output_ids.
+	same_N = all(d.inputs.shape[1] == datasets[0].inputs.shape[1] for d in datasets)
+	if same_N and all(jnp.allclose(d.inputs, datasets[0].inputs, equal_nan=True) for d in datasets[1:]):
+		return Dataset(inputs=datasets[0].inputs, outputs=outputs, known_output_noise=known_output_noise)
+
+	output_ids = jnp.concatenate([jnp.full((d.outputs.shape[1],), o, dtype=int) for o, d in enumerate(datasets)])
+	output_ids = jnp.broadcast_to(output_ids, (inputs.shape[0],) + output_ids.shape)  # mirror inputs' own leading axis
 
 	return Dataset(inputs=inputs, outputs=outputs, known_output_noise=known_output_noise, output_ids=output_ids)
 

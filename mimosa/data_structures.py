@@ -218,6 +218,20 @@ class Dataset(eqx.Module):
 	known_output_noise: None | Float[Array, "T ON C"] = None
 	output_ids: None | Int[Array, "#T oN"] = None
 
+	@property
+	def clean_inputs(self) -> Float[Array, "#T oN I"]:
+		"""
+		`inputs` with NaN padding replaced by 0. Use this, not `inputs`, to feed a kernel.
+
+		Padding is masked downstream from `outputs`, so the value itself is never read -- but it must
+		be finite: `jnp.where` does not stop NaN in the VJP (`0 * NaN = NaN`), so a single padded
+		point turns every kernel hyperparameter's gradient into NaN and freezes the optimiser.
+
+		Never pass this to a `GridBuilder`: 0 is a real input location and would add a spurious grid
+		point.
+		"""
+		return jnp.nan_to_num(self.inputs)
+
 
 @jaxtyped(typechecker=typechecker)
 class Grid(eqx.Module):

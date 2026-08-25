@@ -106,13 +106,16 @@ class DataRemovalConfig:
 	Attributes
 	----------
 	max_missing
-		Maximum number of missing points per task.
+		Maximum number of missing points per task, per output (and per channel, when missingness is
+		not shared across channels).
 	random_missing_count
 		If True, the number of missing points is drawn randomly in [0, `max_missing`]; if False, it is fixed to `max_missing`.
 	same_missing_across_channels
 		If True, a missing point is missing for every channel; if False, missingness is drawn independently per channel.
 	same_missing_across_outputs
 		If True, a missing point is missing for every output; if False, missingness is drawn independently per output.
+		True is only meaningful when outputs share input locations (`ModelConfig.isotopic_output_in_tasks`);
+		`RandomDataRemover` raises otherwise.
 	"""
 	max_missing: int
 	random_missing_count: bool = False

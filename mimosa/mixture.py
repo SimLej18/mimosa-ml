@@ -33,9 +33,41 @@ class MixtureInitialiser(eqx.Module):
 		"""
 		...
 
+def _summary_statistics(outputs: Array) -> Array:
+	"""
+	Min, max, mean and std of each task's observations, per channel, ignoring missing points.
+
+	Parameters
+	----------
+	outputs
+		Output values. Shape `(T, N, C)`. NaN marks a missing (or masked-out) observation.
+
+	Returns
+	-------
+	One row per task, holding that task's four statistics for each channel. Shape `(T, 4*C)`.
+
+	Notes
+	-----
+	Concatenated along the feature axis, *not* stacked-then-reshaped. `jnp.stack` would put the
+	statistic on the leading axis, and reshaping a `(4, T, C)` array to `(T, 4*C)` reinterprets the
+	buffer rather than transposing it -- each row would then hold one statistic belonging to four
+	different tasks.
+	"""
+	return jnp.concatenate((
+		jnp.nanmin(outputs, axis=1),
+		jnp.nanmax(outputs, axis=1),
+		jnp.nanmean(outputs, axis=1),
+		jnp.nanstd(outputs, axis=1)), axis=-1)
+
+
 class KMeansMixtureInitialiser(MixtureInitialiser):
 	"""
-	Initialise a Mixture by soft k-means clustering of per-task channel summary statistics.
+	Initialise a Mixture by soft k-means clustering of per-task summary statistics.
+
+	Each task is summarised by the min, max, mean and standard deviation of its observations, per
+	channel and -- when `n_outputs > 1` -- per output. Summarising per output matters for
+	multi-output data: pooling the outputs into one summary makes two tasks that differ only in one
+	output look nearly identical, which is exactly the situation a multi-output model exists for.
 
 	Attributes
 	----------
@@ -43,26 +75,61 @@ class KMeansMixtureInitialiser(MixtureInitialiser):
 		`jax.random` PRNG key.
 	n_clusters
 		Number of mean-processes to initialise responsibilities for.
+	n_outputs
+		Number of correlated outputs to summarise separately. `1` (the default) summarises the whole
+		task at once. When the Dataset's outputs share their input locations (`output_ids is None`),
+		the count is read off the shapes instead and this attribute is not needed.
 	"""
 	prng_key: Array
 	n_clusters: int
+	n_outputs: int
 
-	def __init__(self, prng_key, n_clusters: int):
+	def __init__(self, prng_key, n_clusters: int, n_outputs: int = 1):
 		self.prng_key = prng_key
 		self.n_clusters = n_clusters
+		self.n_outputs = n_outputs
+
+	def _output_ids(self, dataset: Dataset) -> tuple[int, None | Array]:
+		"""
+		Number of outputs to summarise separately, and which output each observation belongs to.
+
+		`(1, None)` means "summarise the task as a whole". The count must be static (it decides how
+		many feature blocks are built), so it comes from the shapes when the outputs share input
+		locations, and from `n_outputs` otherwise -- `dataset.output_ids`' *values* are traced under
+		`jit` and cannot be inspected here.
+		"""
+		if dataset.output_ids is None:
+			# Outputs share input locations, so `outputs` is block-major over them: (T, O*N, C)
+			# against inputs of (#T, N, I). O is then a ratio of static shapes.
+			n_outputs = dataset.outputs.shape[1] // dataset.inputs.shape[1]
+			if n_outputs == 1:
+				return 1, None
+			points_per_output = dataset.inputs.shape[1]
+			return n_outputs, jnp.repeat(jnp.arange(n_outputs), points_per_output)
+
+		if self.n_outputs == 1:
+			return 1, None
+		return self.n_outputs, dataset.output_ids
 
 	def __call__(self, dataset: Dataset) -> Mixture:
 		"""
-		Cluster tasks by soft k-means over each task's per-channel min, max, mean and std.
+		Cluster tasks by soft k-means over each task's per-output, per-channel min, max, mean and std.
 
 		See `MixtureInitialiser.__call__`.
 		"""
-		# Outputs: shape (T, N, C)
-		features = jnp.stack((
-			jnp.nanmin(dataset.outputs, axis=1),
-			jnp.nanmax(dataset.outputs, axis=1),
-			jnp.nanmean(dataset.outputs, axis=1),
-			jnp.nanstd(dataset.outputs, axis=1))).reshape((len(dataset.outputs), -1))
+		n_outputs, output_ids = self._output_ids(dataset)
+
+		if n_outputs == 1:
+			features = _summary_statistics(dataset.outputs)  # (T, 4*C)
+		else:
+			output_ids = jnp.broadcast_to(output_ids, dataset.outputs.shape[:2])[..., None]
+			features = jnp.concatenate([
+				_summary_statistics(jnp.where(output_ids == o, dataset.outputs, jnp.nan))
+				for o in range(n_outputs)], axis=-1)  # (T, 4*O*C)
+
+		# A task with no surviving observation for some output would otherwise contribute a NaN
+		# feature, which poisons every distance in the k-means rather than just that one coordinate.
+		features = jnp.nan_to_num(features)
 
 		_, resp = soft_kmeans(self.prng_key, features, self.n_clusters)
 		return Mixture(proportions=jnp.ones(self.n_clusters)/self.n_clusters, responsibilities=resp)

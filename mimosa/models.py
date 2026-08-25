@@ -83,7 +83,8 @@ class BasicModel(AbstractModel):
     predictor: Predictor
     jitter: Array
 
-    def __init__(self, prng_key: Array, n_clusters: int, jitter: Array = DEFAULT_JITTER):
+    def __init__(self, prng_key: Array, n_clusters: int, jitter: Array = DEFAULT_JITTER,
+                 n_outputs: int = 1):
         """
         Parameters
         ----------
@@ -93,9 +94,14 @@ class BasicModel(AbstractModel):
             Number of mean-processes in the mixture.
         jitter
             Diagonal jitter added before Cholesky factorizations, for numerical stability.
+        n_outputs
+            Number of correlated outputs, used only by the k-means mixture initialisation, which
+            summarises each task per output rather than pooling them. Only needed when the outputs
+            do *not* share their input locations (`dataset.output_ids is not None`); otherwise the
+            count is read off the Dataset's shapes. See `mimosa.mixture.KMeansMixtureInitialiser`.
         """
         self.laplace_approximation = IdentityLaplaceApproximator()
-        self.mixture_initialiser = KMeansMixtureInitialiser(prng_key, n_clusters)
+        self.mixture_initialiser = KMeansMixtureInitialiser(prng_key, n_clusters, n_outputs)
         self.mixture_updater = MixtureUpdater()
         self.hyperpost = Hyperpost()
         self.cluster_nll = ClusterNLL()

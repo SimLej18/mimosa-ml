@@ -559,21 +559,32 @@ class RandomDataRemover(AbstractDataRemover):
 		"""
 		See `AbstractDataRemover.__call__`.
 		"""
-		# TODO: adapt for multi-output
-		T, N, C = dataset.outputs.shape
+		T, ON, C = dataset.outputs.shape
+		# `outputs`' point axis is O contiguous blocks of N (see `sample_inputs`). `output_ids` is None
+		# exactly when outputs share input locations, and `inputs` then holds a single block of N.
+		N = dataset.inputs.shape[1] if dataset.output_ids is None else ON // (int(dataset.output_ids.max()) + 1)
+		O = ON // N
 
-		# 1: random remove_mask, shape (T, N, C). "Which k of N points are removed" is drawn without
+		if config.same_missing_across_outputs and dataset.output_ids is not None:
+			raise ValueError("Cannot share missingness across outputs when they do not share input "
+							"locations. Set `same_missing_across_outputs=False`, or generate the "
+							"dataset with `isotopic_output_in_tasks=True`.")
+
+		# 1: random remove_mask, shape (T, O, N, C). "Which k of N points are removed" is drawn without
 		# replacement by ranking iid uniform scores per row and keeping the k lowest ranks: no python loop,
-		# no vmap, works whether the row is (task,) or (task, channel).
-		shape = (T, N) if config.same_missing_across_channels else (T, C, N)
+		# no vmap, works whether the row is (task,), (task, output) or (task, output, channel). Rows are
+		# drawn once and broadcast over the axes missingness is shared along.
+		o = 1 if config.same_missing_across_outputs else O
+		shape = (T, o, N) if config.same_missing_across_channels else (T, o, C, N)
 		key_scores, key_counts = jr.split(key)
 		ranks = jnp.argsort(jnp.argsort(jr.uniform(key_scores, shape), axis=-1), axis=-1)
 		counts = jr.randint(key_counts, shape[:-1], 0, config.max_missing + 1) if config.random_missing_count \
 			else jnp.full(shape[:-1], config.max_missing)
-		selected = ranks < counts[..., None]  # shape (T, N) or (T, C, N)
+		selected = ranks < counts[..., None]  # shape (T, o, N) or (T, o, C, N)
 
-		remove_mask = jnp.broadcast_to(selected[..., None], (T, N, C)) if config.same_missing_across_channels \
-			else jnp.moveaxis(selected, 1, 2)  # (T, C, N) -> (T, N, C)
+		selected = selected[..., None] if config.same_missing_across_channels \
+			else jnp.moveaxis(selected, -2, -1)  # (T, o, C, N) -> (T, o, N, C)
+		remove_mask = jnp.broadcast_to(selected, (T, O, N, C)).reshape(T, ON, C)
 
 		# 2: remove outputs (and known noise, if any) in one line
 		outputs = jnp.where(remove_mask, jnp.nan, dataset.outputs)

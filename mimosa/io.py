@@ -143,7 +143,7 @@ def save_csv(csv_path: str | Path | Sequence[str | Path], dataset: Dataset) -> N
 		save_single_csv(path, single_output_dataset)
 
 
-def load_single_csv(csv_path: str | Path) -> Dataset:
+def load_single_csv(csv_path: str | Path, isotopic_tasks: bool = False) -> Dataset:
 	"""
 	Read a single-output Dataset from a CSV file, in "pivoted" form: one row per point.
 
@@ -152,16 +152,26 @@ def load_single_csv(csv_path: str | Path) -> Dataset:
 	Missing values ("nan") are read as NaN.
 
 	Tasks may have a different number of rows. They're padded to the longest task to build a
-	uniform-shape Dataset: padding points are NaN on every input and every channel.
+	uniform-shape Dataset: padding points are NaN on every input and every channel. When every task
+	turns out to hold the exact same input points, `inputs`' leading axis collapses back to 1, the
+	shared-input-locations representation `isotopic_tasks` datasets use.
 
 	Parameters
 	----------
 	csv_path
 		Path to read the CSV file from.
+	isotopic_tasks
+		If True, rebuild a single input axis shared by every task -- the union of the input points
+		appearing in the file, sorted -- and place each task's values on it, NaN where that task
+		doesn't observe a point. Use this to read back a dataset that was `isotopic_tasks` before
+		being written: `save_single_csv` drops points a task is missing on every channel, so each
+		task's rows are otherwise read back as its own (shorter, differing) input locations.
 
 	Returns
 	-------
-	Dataset built from the CSV's "Input*"/"Output*" columns, padded to the longest task.
+	Dataset built from the CSV's "Input*"/"Output*" columns: padded to the longest task, or -- if
+	`isotopic_tasks` -- laid out on the union of every task's input points, with `inputs`' leading
+	axis of size 1.
 
 	Raises
 	------
@@ -192,10 +202,23 @@ def load_single_csv(csv_path: str | Path) -> Dataset:
 	pos_in_task = np.arange(task_ids.size) - np.repeat(starts, counts)
 
 	I, C = len(input_cols), len(channel_cols)
+
+	if isotopic_tasks:
+		# A point every task is missing on is absent from the file entirely, so the union recovers
+		# the shared axis up to those points -- and up to its ordering, which `np.unique` sorts.
+		real = ~np.isnan(inputs_sorted).any(axis=-1)
+		points, positions = np.unique(inputs_sorted[real], axis=0, return_inverse=True)
+		outputs = np.full((T, len(points), C), np.nan)
+		outputs[task_idx[real], positions.reshape(-1)] = outputs_sorted[real]
+		return Dataset(inputs=jnp.asarray(points[None]), outputs=jnp.asarray(outputs))
+
 	inputs = np.full((T, N, I), np.nan)
 	outputs = np.full((T, N, C), np.nan)
 	inputs[task_idx, pos_in_task] = inputs_sorted
 	outputs[task_idx, pos_in_task] = outputs_sorted
+
+	if np.all(np.isclose(inputs, inputs[:1], equal_nan=True)):
+		inputs = inputs[:1]
 
 	return Dataset(inputs=jnp.asarray(inputs), outputs=jnp.asarray(outputs))
 
@@ -247,7 +270,7 @@ def merge_multioutput_datasets(datasets: Sequence[Dataset]) -> Dataset:
 	return Dataset(inputs=inputs, outputs=outputs, known_output_noise=known_output_noise, output_ids=output_ids)
 
 
-def load_csv(csv_path: str | Path | Sequence[str | Path]) -> Dataset:
+def load_csv(csv_path: str | Path | Sequence[str | Path], isotopic_tasks: bool = False) -> Dataset:
 	"""
 	Read a Dataset from CSV. A single path reads one file (see `load_single_csv`); a sequence of
 	paths reads one file per output (in output-index order) and merges them (see
@@ -257,6 +280,10 @@ def load_csv(csv_path: str | Path | Sequence[str | Path]) -> Dataset:
 	----------
 	csv_path
 		Path (single-output dataset) or one path per output, in output-index order.
+	isotopic_tasks
+		If True, lay every task on one shared input axis per output, so the Dataset is read back in
+		the `ModelConfig.isotopic_tasks` representation the model's parameters expect. See
+		`load_single_csv`.
 
 	Returns
 	-------
@@ -268,14 +295,14 @@ def load_csv(csv_path: str | Path | Sequence[str | Path]) -> Dataset:
 		If `csv_path` is a sequence and the files don't all share the same set of `TaskID`s.
 	"""
 	if isinstance(csv_path, (str, Path)):
-		return load_single_csv(csv_path)
+		return load_single_csv(csv_path, isotopic_tasks)
 
 	csv_paths = list(csv_path)
 	if len(csv_paths) == 1:
-		return load_single_csv(csv_paths[0])
+		return load_single_csv(csv_paths[0], isotopic_tasks)
 
 	task_id_sets = [set(pl.read_csv(p, columns=["TaskID"])["TaskID"].to_list()) for p in csv_paths]
 	if any(s != task_id_sets[0] for s in task_id_sets[1:]):
 		raise ValueError("All csv_path files must share the exact same set of TaskIDs to be merged into a multi-output Dataset.")
 
-	return merge_multioutput_datasets([load_single_csv(p) for p in csv_paths])
+	return merge_multioutput_datasets([load_single_csv(p, isotopic_tasks) for p in csv_paths])

@@ -124,8 +124,8 @@ def sample_inputs(key: Array, grid: Grid, dims: Dimensions, config: ModelConfig)
 				inputs = vmap(lambda k: jr.choice(k, grid.points, (dims.N,), replace=False))(jr.split(key, dims.O))
 				mappings = vmap(lambda i: compute_mapping(grid.points, i))(inputs)
 
-				inputs = inputs.reshape(dims.N * dims.O, dims.I)
-				mappings = mappings.reshape(dims.N * dims.O) + output_mapping_offset
+				inputs = inputs.reshape(dims.N * dims.O, dims.I)[None, ...]
+				mappings = (mappings.reshape(dims.N * dims.O) + output_mapping_offset)[None, ...]
 
 			else:
 				inputs = vmap(lambda k: jr.choice(k, grid.points, (dims.N,), replace=False))(jr.split(key, dims.T * dims.O))

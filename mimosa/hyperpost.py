@@ -205,8 +205,18 @@ class Hyperpost(eqx.Module):
 
 		Examples
 		--------
-		Continuing from the example of `hyperpost`:
-
+		>>> import jax.random as jr
+		>>> from kernax import ZeroMean, VarianceKernel, SEKernel, WhiteNoiseKernel
+		>>> from mimosa.data_structures import Dimensions, Parameters, ModelConfig
+		>>> from mimosa.synthetic import generate_data
+		>>> dims = Dimensions(T=3, K=1, I=1, C=1, O=1, N=5, G=5)
+		>>> parameters = Parameters(
+		...     cluster_mean=ZeroMean(),
+		...     cluster_kernel=VarianceKernel(1.0) * SEKernel(length_scale=1.0),
+		...     task_kernel=VarianceKernel(0.5) * SEKernel(length_scale=1.0),
+		...     noise_kernel=WhiteNoiseKernel(noise=0.1),
+		... )
+		>>> dataset, grid, _, mixture, sampled_params, *_ = generate_data(jr.PRNGKey(0), dims, parameters, ModelConfig())
 		>>> hyperposterior = Hyperpost()
 		>>> hyperposterior(dataset, grid, mixture, sampled_params).mean.shape
 		(1, 1, 5)

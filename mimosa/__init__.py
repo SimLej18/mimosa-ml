@@ -4,7 +4,7 @@ mimosa-ml: multi-task, multi-cluster Gaussian process regression with heterogene
 import importlib.metadata
 import jax.numpy as jnp
 
-DEFAULT_JITTER = jnp.asarray(1e-5)
+DEFAULT_JITTER = jnp.asarray(1e-8)
 
 from mimosa.data_structures import (
 	Dataset, Dimensions, ModelConfig, DataRemovalConfig, Parameters, ParameterPriors,

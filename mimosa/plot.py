@@ -112,24 +112,43 @@ def _task_xy(dataset: Dataset, dims: Dimensions, t_id: int, c_id: int, o_id: int
 def _grid_x(grid: Grid, dims: Dimensions, o_id: int):
 	"""
 	Extract a single output's grid input locations as a 1D numpy array (only 1D inputs, `I == 1`,
-	supported). `grid.points` has `dims.G` rows if every output shares grid locations
-	(isotopic_output_in_grid), `dims.O * dims.G` rows otherwise.
+	supported). Every output shares the whole of `grid.points` if `grid.output_ids` is None
+	(isotopic_output_in_grid); otherwise `output_ids` says which rows belong to which output.
+
+	Note that `grid` need not be the one the data was generated on: a `mimosa.grid.GridBuilder`
+	builds its points from the data, so their count is `len(grid.points)`, not `dims.G`.
 	"""
-	rows = slice(None) if grid.points.shape[0] == dims.G else _output_rows(grid.output_ids, o_id, dims.G)
+	rows = slice(None) if grid.output_ids is None else np.flatnonzero(np.asarray(grid.output_ids) == o_id)
 	return np.asarray(grid.points[rows, 0])
 
 
-def _mvn_cell(obj, dims: Dimensions, k_id: int, c_id: int, o_id: int):
+def _grid_block(grid: Grid, dims: Dimensions, o_id: int, length: int):
+	"""
+	Row selector for output `o_id` in a grid-indexed vector of `length` rows -- a
+	Hyperprior/Hyperposterior mean, a prediction, or a sample. Rows are `dims.O` equal blocks over a
+	shared pool of grid points (block-major convention, see `mimosa.synthetic.generate_data` and
+	kernax's multi-output Mean/Kernel classes), or one block per output when `grid.output_ids`
+	labels them.
+
+	The block size is read off `length` rather than `dims.G`, so it also holds for a grid built from
+	the data by a `mimosa.grid.GridBuilder`.
+	"""
+	if grid.output_ids is None:
+		block = length // dims.O
+		return slice(o_id * block, (o_id + 1) * block)
+	return np.flatnonzero(np.asarray(grid.output_ids) == o_id)
+
+
+def _mvn_cell(obj, grid: Grid, dims: Dimensions, k_id: int, c_id: int, o_id: int):
 	"""
 	Index a Hyperprior/Hyperposterior's `(K, C, O*G)`/`(K, C, O*G, O*G)` mean/covariance at
 	`(k_id, c_id)`, broadcasting any axis of size 1 (shared hyperparameters) to index 0 instead,
-	then slice out the `o_id`-th `G`-sized output block (block-major convention, see
-	`mimosa.synthetic.generate_data` and kernax's multi-output Mean/Kernel classes).
+	then slice out the `o_id`-th output block (see `_grid_block`).
 	"""
 	k = k_id if obj.mean.shape[0] > 1 else 0
 	c = c_id if obj.mean.shape[1] > 1 else 0
-	rows = slice(o_id * dims.G, (o_id + 1) * dims.G)
-	return obj.mean[k, c, rows], obj.covariance[k, c, rows, rows]
+	rows = _grid_block(grid, dims, o_id, obj.mean.shape[-1])
+	return obj.mean[k, c, rows], obj.covariance[k, c][rows][:, rows]
 
 
 def _cluster_palette(K: int) -> list:
@@ -402,10 +421,10 @@ def plot_single_cluster_single_channel(
 		a = ax[row, 0]
 		x = _grid_x(grid, dims, o)
 		if hyperprior is not None:
-			prior_mean, _ = _mvn_cell(hyperprior, dims, k_id, c_id, o)
+			prior_mean, _ = _mvn_cell(hyperprior, grid, dims, k_id, c_id, o)
 			a.plot(x, np.asarray(prior_mean), linestyle="--", color=color, **line_kwargs)
 		if hyperposterior is not None:
-			post_mean, post_cov = _mvn_cell(hyperposterior, dims, k_id, c_id, o)
+			post_mean, post_cov = _mvn_cell(hyperposterior, grid, dims, k_id, c_id, o)
 			post_mean = np.asarray(post_mean)
 			post_std = np.sqrt(np.diagonal(np.asarray(post_cov)))
 			a.plot(x, post_mean, linestyle="-", color=color, **line_kwargs)
@@ -666,19 +685,19 @@ def plot_single_task_prediction(
 	for row, o in enumerate(o_ids):
 		a = ax[row, 0]
 		x_grid = _grid_x(grid, dims, o)
-		block = slice(o * dims.G, (o + 1) * dims.G)
+		block = _grid_block(grid, dims, o, hyperposterior.mean.shape[-1])
 
 		if samples is not None:
 			for s in np.asarray(samples)[:, block]:
 				a.plot(x_grid, s, color=sample_color, alpha=sample_alpha, linewidth=1)
 
 		for k in range(K):
-			cluster_mean, _ = _mvn_cell(hyperposterior, dims, k, c_id, o)
+			cluster_mean, _ = _mvn_cell(hyperposterior, grid, dims, k, c_id, o)
 			a.plot(x_grid, np.asarray(cluster_mean), linestyle="--", color=palette[k], alpha=float(weights[k]))
 
 		if prediction is not None:
 			pred_mean = np.asarray(prediction.mean[block])
-			pred_std = np.sqrt(np.diagonal(np.asarray(prediction.covariance[block, block])))
+			pred_std = np.sqrt(np.diagonal(np.asarray(prediction.covariance[block][:, block])))
 			a.plot(x_grid, pred_mean, linestyle="-", color=prediction_color)
 			a.fill_between(x_grid, pred_mean - ci_scale * pred_std, pred_mean + ci_scale * pred_std,
 							color=prediction_color, alpha=ci_alpha, linewidth=0)

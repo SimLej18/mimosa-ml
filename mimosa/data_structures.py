@@ -77,8 +77,6 @@ class ModelConfig:
 		If True, cluster-kernel hyperparameters are shared across mean-processes; if False, each mean-process has its own.
 	shared_channel_hps
 		If True, hyperparameters are shared across channel dimensions; if False, each channel has its own.
-	shared_output_hps
-		If True, hyperparameters are shared across outputs; if False, each output has its own.
 	cluster_specific_task_hps
 		If True, task-kernel hyperparameters may additionally vary by cluster assignment, independently of `shared_task_hps`.
 	isotopic_tasks
@@ -91,7 +89,6 @@ class ModelConfig:
 	shared_task_hps: bool = True
 	shared_cluster_hps: bool = True
 	shared_channel_hps: bool = True
-	shared_output_hps: bool = True
 	cluster_specific_task_hps: bool = True
 	isotopic_tasks: bool = True
 	isotopic_output_in_tasks: bool = True
@@ -120,7 +117,7 @@ class DataRemovalConfig:
 	max_missing: int
 	random_missing_count: bool = False
 	same_missing_across_channels: bool = True
-	same_missing_across_outputs: bool = True
+	same_missing_across_outputs: bool = False
 
 
 def validate_model_config(model_config: ModelConfig, dimensions: Dimensions) -> None:
@@ -145,8 +142,6 @@ def validate_model_config(model_config: ModelConfig, dimensions: Dimensions) -> 
 		raise ValueError("Cannot have distinct cluster hyperparameters with only one cluster.")
 	if not model_config.shared_channel_hps and dimensions.C == 1:
 		raise ValueError("Cannot have distinct channel hyperparameters with only one channel.")
-	if not model_config.shared_output_hps and dimensions.O == 1:
-		raise ValueError("Cannot have distinct output hyperparameters with only one output.")
 	if (not model_config.isotopic_output_in_grid or not model_config.isotopic_output_in_tasks) and dimensions.O == 1:
 		raise ValueError("Cannot have multi-output grids/task inputs with only one output.")
 	if model_config.isotopic_output_in_tasks and not model_config.isotopic_output_in_grid:

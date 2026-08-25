@@ -4,9 +4,10 @@ A fully-featured *multi-task Gaussian process framework* for analysing functiona
 It is based on the [MagmaClust framework](https://jmlr.org/papers/v24/20-1321.html), with many enhancements for efficiency and modularity.
 
 Its core features currently include:
-* Joint learning across multiple samples (Multi-Task GPs) with unaligned sampling grids
+* Joint learning across multiple samples (*Multi-Task* GPs) with unaligned sampling grids
 * Clustering of samples
 * Multi-dimensional inputs and outputs
+* Inter-output correlation learning for vector-valued functions
 * Probabilistic predictions with uncertainty quantification
 * A multitude of training configuration to model complex relationships between tasks, clusters and inputs
 * Deep kernax integration for complex kernels/means functions
@@ -14,7 +15,6 @@ Its core features currently include:
 * Full Jax/Equinox compatibility for vmap/grad/jit
 
 Towards v1.0.0, we plan to add:
-* Inter-output correlation learning
 * Adaptation to non-gaussian data and classification tasks
 * Sparse learning and approximations for scalability
 * Visualisation tools for data and model outputs
@@ -24,6 +24,7 @@ Towards v1.0.0, we plan to add:
 > While current features are functional in most cases, bugs can happen.
 > The API and features are still subject to change.
 > If you use the package for research/production, we encourage you to version-lock your mimosa dependency.
+> Take a look at the CHANGELOG.md when you upgrade to a new version of MIMOSA.
 
 ---
 ## Installation
@@ -53,7 +54,7 @@ We basically took Gaussian processes, and combined them with a ton of ✨*fancy 
 * ➡️ Clustering as a mixture of Magma GPs
 * ➡️ Multi-dimensional inputs thanks to efficient kernels from [Kernax](https://github.com/SimLej18/kernax-ml)
 * ➡️ Multi-dimensional uncorrelated channels by simply broadcasting the algorithm to another dimension
-* ➡️ Multi-output correlation discovery by learning a [convolution process]([TODO]) with specific kernel
+* ➡️ Multi-output correlation discovery by learning a [multi-output kernel]([https://arxiv.org/pdf/1106.6251])
 
 
 We use **JAX** as a back-end for every computation! 
@@ -147,7 +148,6 @@ Here is a quick overview of what each configuration option does.
 * `shared_task_hps` (default `True`): whether task kernel/noise hyper-parameters are shared across all tasks, or learnt independently per task.
 * `shared_cluster_hps` (default `True`): whether cluster mean/kernel hyper-parameters are shared across all clusters (mean-processes), or learnt independently per cluster.
 * `shared_channel_hps` (default `True`): whether hyper-parameters are shared across channel dimensions, or learnt independently per channel.
-* `shared_output_hps` (default `True`): whether hyper-parameters are shared across outputs, or learnt independently per output.
 * `cluster_specific_task_hps` (default `True`): whether the task/noise kernels themselves vary depending on the cluster a task belongs to, or are shared across clusters.
 * `isotopic_tasks` (default `True`): whether all tasks are observed at the same input locations, or each task has its own set of inputs.
 * `isotopic_output_in_tasks` (default `True`): whether all outputs of a task are observed at the same input locations, or each output has its own set of inputs within a task.
@@ -190,7 +190,7 @@ MIMOSA is primarily developed by the *Magma Task Force*, composed of:
 
 * [Arthur Leroy](https://arthur-leroy.netlify.app/), researcher at Paris Saclay and INRAe (FR), main author of the original tool [MagmaClustR](https://arthurleroy.github.io/MagmaClustR/) and coordinator of the Task Force.
 * [Simon Lejoly](https://researchportal.unamur.be/fr/persons/slejoly/), PhD student at UNamur (BE), main developper of the package and author of the [Kernax package](https://github.com/SimLej18/kernax-ml)
-* [Alexia Grenouillat]([TODO]), PhD student at INSA Toulouse (FR), developper of multi-output correlation discovery.
+* [Alexia Grenouillat]([TODO]), PhD student at INSA Toulouse (FR), working on multi-output correlation discovery.
 * [Térence Viellard]([TODO]), PhD student at INRAe (FR), working on sparse approximations and scalability.
 
 If you use the package for your research, please consider citing the following paper:

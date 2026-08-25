@@ -33,7 +33,7 @@ plt.rcParams['figure.dpi']=300
 #%% 1. Configuration
 # Dimensions: T tasks, K clusters, I input dims, C channels, O correlated outputs, N points
 # observed per task, G points in the full grid.
-dims = Dimensions(T=32, K=2, I=1, C=2, O=3, N=50, G=150)
+dims = Dimensions(T=32, K=2, I=1, C=1, O=3, N=50, G=150)
 
 # ModelConfig controls which hyperparameters are shared (across tasks/clusters/channels/outputs) and
 # whether tasks/outputs share input locations. isotopic_output_in_grid/isotopic_output_in_tasks
@@ -44,11 +44,15 @@ model_config = ModelConfig(
 	shared_cluster_hps=True,
 	shared_channel_hps=True,
 	cluster_specific_task_hps=False,
-	isotopic_tasks=False,
+	isotopic_tasks=True,
+	isotopic_output_in_grid=True,  # <-- See what happens when you change this
+	isotopic_output_in_tasks=False,  # <-- See what happens when you change this
 )
+# Note: one combo breaks: isotopic_output_in_grid=False and isotopic_output_in_tasks=True
+# (it is impossible to sample isotopic task inputs from an heterotopic grid)
 
 # How many points to remove at random per task, to simulate missing data.
-removal_config = DataRemovalConfig(max_missing=5, random_missing_count=True, same_missing_across_channels=False)
+removal_config = DataRemovalConfig(max_missing=5, random_missing_count=True, same_missing_across_outputs=False)
 
 #%% 2. Generative parameters
 # These are the "true" parameters used to synthesise the toy dataset below. Swap any kernel/mean for
@@ -63,6 +67,9 @@ true_params = Parameters(
 	noise_kernel=BlockDiagKernel(WhiteNoiseKernel(noise=.05), n_outputs=dims.O, output_hps_in_axes=None),
 )
 
+# Try to change the number of latents, change the MO kernel (ICM/LCM/Convolution) or put one MO kernel for
+# clusters/tasks and BlockDiag for the other and see what happens!
+
 #%% 3. Generate synthetic data, then remove points at random
 key, gen_key, removal_key = jr.split(key, 3)
 
@@ -75,7 +82,7 @@ dataset = RandomDataRemover()(removal_key, dataset, removal_config)
 # One CSV per output (in output-index order) -- check load_csv's doc for the expected file format.
 csv_paths = [f"./dummy_output{o}.csv" for o in range(dims.O)]
 save_csv(csv_paths, dataset)
-dataset = load_csv(csv_paths)
+dataset = load_csv(csv_paths, isotopic_tasks=model_config.isotopic_tasks)
 
 #%% 4. Plot the raw dataset (coloured by each task's true cluster)
 fig, ax = plot_dataset(dataset, dims, mixture=true_mixture, figsize=(8 * dims.C, 6 * dims.O))

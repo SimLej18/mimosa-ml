@@ -3,8 +3,9 @@ Basic multi-output usage example of mimosa-ml.
 
 Same pipeline as `basic_example.py`, but with `dims.O > 1` (correlated outputs) instead of the
 single-output default -- see the diff against `basic_example.py` for exactly what changes: wrapping
-the mean/kernels for multi-output (`BlockMean`/`ICMKernel`/`BlockDiagKernel`), and saving/loading the
-dataset as one CSV per output instead of a single file.
+the mean/kernels for multi-output (`BlockMean`/`ICMKernel`/`BlockDiagKernel`). Saving/loading the
+dataset is otherwise identical to the single-output case: one CSV, with `Output<o>_<c>` columns for
+every output/channel pair (see `mimosa.io.save_single_csv`).
 
 Meant to be run cell-by-cell (e.g. in PyCharm/VSCode's "#%%" notebook mode), or as a plain script.
 """
@@ -44,7 +45,7 @@ model_config = ModelConfig(
 	shared_cluster_hps=True,
 	shared_channel_hps=True,
 	cluster_specific_task_hps=False,
-	isotopic_tasks=True,
+	isotopic_tasks=False,
 	isotopic_output_in_grid=True,  # <-- See what happens when you change this
 	isotopic_output_in_tasks=False,  # <-- See what happens when you change this
 )
@@ -78,11 +79,10 @@ dataset, grid, hyperprior, true_mixture, true_params, cluster_means, tasks = gen
 )
 dataset = RandomDataRemover()(removal_key, dataset, removal_config)
 
-#%% 3bis. Alternatively, you can load a dataset from local files through load_csv.
-# One CSV per output (in output-index order) -- check load_csv's doc for the expected file format.
-csv_paths = [f"./dummy_output{o}.csv" for o in range(dims.O)]
-save_csv(csv_paths, dataset)
-dataset = load_csv(csv_paths, isotopic_tasks=model_config.isotopic_tasks)
+#%% 3bis. Alternatively, you can load a dataset from a local file through load_csv.
+# Check load_csv's doc or open the csv file to see the expected file format.
+save_csv("./dummy_mo.csv", dataset)
+dataset = load_csv("./dummy_mo.csv")
 
 #%% 4. Plot the raw dataset (coloured by each task's true cluster)
 fig, ax = plot_dataset(dataset, dims, mixture=true_mixture, figsize=(8 * dims.C, 6 * dims.O))

@@ -14,7 +14,6 @@ from mimosa.hyperpost import Hyperpost
 from mimosa.nll import ClusterNLL, TaskNLL
 from mimosa.optimisers import ClusterOptimiser, TaskOptimiser
 from mimosa.mixture import KMeansMixtureInitialiser, MixtureInitialiser, MixtureUpdater
-from mimosa.laplace import LaplaceApproximator, IdentityLaplaceApproximator
 from mimosa.prediction import Predictor
 from mimosa.data_structures import Dataset, Grid, Mixture, Parameters, MultivariateNormal
 from mimosa import DEFAULT_JITTER
@@ -41,8 +40,8 @@ class AbstractModel(eqx.Module):
 
 class BasicModel(AbstractModel):
     """
-    Default model pipeline: identity Laplace approximation, k-means mixture initialisation,
-    LBFGS-optimised cluster and task hyperparameters.
+    Default model pipeline: k-means mixture initialisation, LBFGS-optimised cluster and task
+    hyperparameters.
 
     Unlike grid construction (see `mimosa.grid.GridBuilder`), every step here is jit-compatible, so
     `fit`/`predict` are jitted end-to-end. The `Grid` itself is a required argument rather than an
@@ -51,8 +50,6 @@ class BasicModel(AbstractModel):
 
     Attributes
     ----------
-    laplace_approximation
-        Wraps the dataset before fitting/prediction (identity by default).
     mixture_initialiser
         Initialises the tasks' mixture responsibilities.
     mixture_updater
@@ -72,7 +69,6 @@ class BasicModel(AbstractModel):
     jitter
         Diagonal jitter added before Cholesky factorizations, for numerical stability.
     """
-    laplace_approximation: LaplaceApproximator
     mixture_initialiser: MixtureInitialiser
     mixture_updater: MixtureUpdater
     hyperpost: Hyperpost
@@ -100,7 +96,6 @@ class BasicModel(AbstractModel):
             do *not* share their input locations (`dataset.output_ids is not None`); otherwise the
             count is read off the Dataset's shapes. See `mimosa.mixture.KMeansMixtureInitialiser`.
         """
-        self.laplace_approximation = IdentityLaplaceApproximator()
         self.mixture_initialiser = KMeansMixtureInitialiser(prng_key, n_clusters, n_outputs)
         self.mixture_updater = MixtureUpdater()
         self.hyperpost = Hyperpost()
@@ -148,8 +143,6 @@ class BasicModel(AbstractModel):
         mixture
             Fitted mixture, with `mixture_proportions` unchanged and updated responsibilities.
         """
-        dataset = self.laplace_approximation.wrap(dataset)
-
         mixture = self.mixture_initialiser(dataset)
         mixture = Mixture(proportions=mixture_proportions, responsibilities=mixture.responsibilities)
 
@@ -212,6 +205,5 @@ class BasicModel(AbstractModel):
         -------
         Predicted distribution over each task's outputs at the grid points, for every mean-process.
         """
-        dataset = self.laplace_approximation.wrap(dataset)
         hyperposterior = self.hyperpost(dataset, grid, mixture, parameters, jitter=self.jitter)
         return self.predictor(dataset, grid, hyperposterior, parameters, jitter=self.jitter)

@@ -8,6 +8,7 @@ Structures are plain dataclasses, or `equinox.Module` when they must be passed t
 from dataclasses import dataclass, fields
 from jaxtyping import Array, Float, Int, jaxtyped
 import jax.numpy as jnp
+import jax.tree_util as jtu
 from beartype import beartype as typechecker
 import equinox as eqx
 from kernax import MeanLike, KernelLike
@@ -348,13 +349,45 @@ class PredictionCovBlocks(eqx.Module):
 		Covariance among the grid points.
 	cov_crossed
 		Cross-covariance between the observed input points and the grid points.
+
+	Notes
+	-----
+	The batch dimensions are broadcastable (`#*B`) rather than identical: only `cov_obs` includes the
+	noise kernel, so a noise carrying its own values per task or per channel -- e.g.
+	`mimosa.synthetic.known_noise_kernel` -- batches `cov_obs` along an axis the two grid blocks are
+	legitimately shared along. Mismatched sizes are still rejected.
 	"""
-	cov_obs: Float[Array, "*B FN FN"]
-	cov_grid: Float[Array, "*B FG FG"]
-	cov_crossed: Float[Array, "*B FN FG"]
+	cov_obs: Float[Array, "#*B FN FN"]
+	cov_grid: Float[Array, "#*B FG FG"]
+	cov_crossed: Float[Array, "#*B FN FG"]
 
 	def __getitem__(self, item):
 		"""
 		Index `cov_obs`, `cov_grid` and `cov_crossed` jointly along the batch dimensions.
 		"""
 		return PredictionCovBlocks(cov_obs=self.cov_obs[item], cov_grid=self.cov_grid[item], cov_crossed=self.cov_crossed[item])
+
+	@property
+	def over_tasks(self) -> tuple["PredictionCovBlocks", "PredictionCovBlocks"]:
+		"""
+		This, and the `in_axes` mapping it over the leading (task) axis.
+
+		A block whose leading axis is 1 is shared across tasks: it is squeezed and marked `None`, so
+		the vmap reads the single copy instead of slicing it. Blocks are handled one by one, since
+		they need not be shared along the same axes.
+
+		Returns
+		-------
+		blocks, in_axes
+			`blocks` with every shared block squeezed, and a matching pytree of `0`/`None` to pass as
+			`jax.vmap`'s `in_axes`. Both are built by `tree_unflatten`, which skips the jaxtyped
+			`__init__` -- `in_axes` holds ints and None, not Arrays.
+		"""
+		blocks, axes = [], []
+		for block in jtu.tree_leaves(self):
+			shared = block.shape[0] == 1
+			blocks.append(block[0] if shared else block)
+			axes.append(None if shared else 0)
+
+		structure = jtu.tree_structure(self)
+		return jtu.tree_unflatten(structure, blocks), jtu.tree_unflatten(structure, axes)

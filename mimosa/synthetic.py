@@ -8,7 +8,8 @@ import jax.random as jr
 import jax.numpy as jnp
 from jax import vmap, Array
 import equinox as eqx
-from kernax import BatchModule, AbstractKernel, AbstractMean, AbstractModule
+from kernax import BatchModule, InputSpecificParamModule, WhiteNoiseKernel, AbstractKernel, AbstractMean, AbstractModule
+from kernax.parametrisations import NonTrainableParametrisation
 from kernax.hp_sampling import sample_hps_from_uniform_priors
 
 from mimosa.data_structures import Dimensions, Parameters, ParameterPriors, ModelConfig, Hyperprior, Mixture, Dataset, \
@@ -287,6 +288,49 @@ def build_task_kernel(
 			task_kernel = BatchModule(task_kernel, batch_size=dims.T, batch_in_axes=0, batch_over_inputs=True)
 
 	return task_kernel
+
+
+def known_noise_kernel(variances: Array, dims: Dimensions, config: ModelConfig) -> AbstractModule:
+	"""
+	Build a non-trainable, per-point white-noise kernel carrying `variances`.
+
+	Add it to a `build_task_kernel`-batched noise kernel (`noise_kernel + known_noise_kernel(...)`) so
+	that each observation's own known variance enters the task covariance. Batched channel, then
+	cluster, then task, matching `build_task_kernel`'s axis order; only the task axis carries data.
+
+	Parameters
+	----------
+	variances
+		Per-point variances, shape `(T, N, C)` (NaN padding read as 0). A NaN would poison every
+		hyperparameter gradient; padded points are masked downstream anyway.
+	dims
+		Dimensions of the dataset to fit.
+	config
+		Model configuration, used for its `isotopic_tasks` and `isotopic_output_in_tasks` fields.
+
+	Returns
+	-------
+	Kernel evaluating to a diagonal covariance of shape `(T, 1, C, N, N)`.
+
+	Raises
+	------
+	NotImplementedError
+		If `variances` spans more rows than there are input points, i.e. several correlated outputs
+		share their input locations: the noise then needs a block kernel.
+	"""
+	n_points = dims.N if config.isotopic_output_in_tasks else dims.O * dims.N
+	if variances.shape[1] != n_points:
+		raise NotImplementedError(
+			"Multi-output datasets sharing their input locations are not supported: the known noise "
+			f"spans {variances.shape[1]} rows, but the kernel only sees {n_points} input points.")
+
+	kernel = InputSpecificParamModule(
+		WhiteNoiseKernel(noise=0., noise_parametrisation=NonTrainableParametrisation()), n_points)
+	kernel = BatchModule(kernel, batch_size=dims.C, batch_in_axes=0, batch_over_inputs=False)
+	kernel = BatchModule(kernel, batch_size=1, batch_in_axes=None, batch_over_inputs=False)
+	kernel = BatchModule(kernel, batch_size=dims.T, batch_in_axes=0,
+	                     batch_over_inputs=not config.isotopic_tasks)
+	return kernel.replace(noise=jnp.moveaxis(jnp.nan_to_num(variances), -1, 1))
 
 
 def build_parameters(parameters: Parameters, dims: Dimensions, config: ModelConfig) -> Parameters:

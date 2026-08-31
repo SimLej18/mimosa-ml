@@ -244,26 +244,14 @@ def predict(dataset: Dataset,
 
 	mappings = grid.mappings[0] if dataset.inputs.shape[0] == 1 else grid.mappings
 
-	if task_cov_blocks.cov_obs.shape[0] == 1:
-		return vmap(
-			predict_clusters,
-			in_axes=(0,
-			         0 if mappings.ndim == 2 else None,
-			         None,
-			         None,
-			         None),
-		)(dataset.outputs,
-		  mappings,
-		  hyperposterior,
-		  task_cov_blocks[0],
-		  jitter)
+	task_cov_blocks, task_cov_axes = task_cov_blocks.over_tasks
 
 	return vmap(
 		predict_clusters,
 		in_axes=(0,
 		         0 if mappings.ndim == 2 else None,
 		         None,
-		         0,
+		         task_cov_axes,
 		         None),
 	)(dataset.outputs,
 	  mappings,

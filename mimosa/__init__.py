@@ -11,11 +11,15 @@ from mimosa.data_structures import (
 	Grid, Mixture, Hyperprior, Hyperposterior, MultivariateNormal,
 )
 from mimosa.io import save_csv, load_csv
+from mimosa import laplace
 from mimosa.models import BasicModel
+from mimosa.mixture import KMeansMixtureInitialiser
 from mimosa.synthetic import generate_data, RandomDataRemover, build_parameters, sample_parameters_from_priors
 
 __all__ = [
+	"laplace",
 	"BasicModel",
+	"KMeansMixtureInitialiser",
 	"Dataset",
 	"Dimensions",
 	"ModelConfig",

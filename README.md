@@ -134,6 +134,21 @@ fig, ax = plot_single_task_prediction(
 
 ![Prediction samples for task 0](docs/images/task0_prediction_samples.png)
 
+### Non-Gaussian observations
+
+Binary, count or duration data can be Laplace-matched into Gaussian pseudo-observations before
+fitting, so the rest of the pipeline is unchanged:
+
+```python
+from mimosa.laplace import BinomialLaplaceApproximator
+
+approximator = BinomialLaplaceApproximator(interval=0.1)
+wrapped = approximator.wrap(dataset)      # Gaussian means + per-point known noise
+probabilities = approximator.unwrap(samples)  # predictions back to observation space
+```
+
+See `examples/binary_classif_example.py` for the full pipeline. Experimental.
+
 MIMOSA is designed to have multiple layer of customisation. The "Model" API covers the most general use case of the
 algorithm, but you should consider building your own training loops and combining/developping your own sub-modules to 
 create tailored models and pipelines.

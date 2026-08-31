@@ -9,6 +9,33 @@ before upgrading.
 
 ---
 
+## [v0.3.0-alpha] — 2026-08-31
+
+Laplace matching: non-Gaussian observations (binary, counts, durations) can now be fitted, by
+moment-matching them into Gaussian pseudo-observations before the pipeline runs. **Experimental** —
+the API may change in any release.
+
+### Added
+
+* `mimosa.laplace`, with `BinomialLaplaceApproximator`, `PoissonLaplaceApproximator`,
+  `ExponentialLaplaceApproximator` and the no-op `IdentityLaplaceApproximator`. `wrap(dataset)`
+  returns a `Dataset` of Gaussian means with their variances in `known_output_noise`;
+  `unwrap(samples)` maps predictions back to observation space. Observations can be binned along
+  the inputs with `interval`, and the conjugate prior tuned with `prior_count`.
+* `mimosa.synthetic.known_noise_kernel`, to feed those per-point variances to the model as a
+  non-trainable noise term.
+* `examples/binary_classif_example.py`, end-to-end on Bernoulli data.
+
+### Breaking changes
+
+* `BasicModel` no longer holds a `laplace_approximation`, and no longer wraps the dataset in
+  `fit`/`predict`. Call `approximator.wrap(dataset)` yourself before fitting. Gaussian data is
+  unaffected.
+* `PredictionCovBlocks` batch dimensions are now broadcastable (`#*B`): only `cov_obs` carries the
+  noise kernel, so it may batch along an axis the grid blocks are shared along.
+
+---
+
 ## [v0.2.0] — 2026-08-26
 
 The multi-output release. MIMOSA now learns **correlations between outputs** of a vector-valued
@@ -251,6 +278,7 @@ tasks as a mixture of Magma GPs, multi-dimensional inputs and (uncorrelated) out
 predictions with uncertainty quantification, Kernax kernel/mean integration, and full JAX/Equinox
 compatibility for `vmap`/`grad`/`jit`.
 
+[v0.3.0-alpha]: https://github.com/SimLej18/mimosa/releases/tag/v0.3.0-alpha
 [v0.2.0]: https://github.com/SimLej18/mimosa/releases/tag/v0.2.0
 [v0.1.1-alpha]: https://github.com/SimLej18/mimosa/releases/tag/v0.1.1-alpha
 [v0.1.0-alpha]: https://github.com/SimLej18/mimosa/releases/tag/v0.1.0-alpha

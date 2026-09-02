@@ -34,7 +34,18 @@ dependencies = [
 Homepage = "https://github.com/SimLej18/mimosa"
 
 [project.optional-dependencies]
-dev = ["pytest"]
+dev = [
+    "pytest",
+    "pre-commit"
+]
+
+docs = [
+    "jupytext",
+    "sphinx",
+    "myst-nb",
+    "sphinx-book-theme",
+    "sphinx-togglebutton",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["mimosa"]

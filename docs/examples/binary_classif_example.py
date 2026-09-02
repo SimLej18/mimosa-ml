@@ -1,15 +1,32 @@
+# %% tags=["remove-cell"]
+import importlib.util, subprocess, sys
+if importlib.util.find_spec("kernax") is None:
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "kernax"], check=True)
+# %% [markdown]
 """
-Binary-classification example: fitting mimosa-ml to boolean observations through Laplace matching.
+# Binary classification with Laplace matching
 
-The model only knows how to handle Gaussian observations, so the booleans are first turned into
-Gaussian ones by `mimosa.laplace`: observations are binned along the input axis, each bin's Beta
-posterior over the success probability is moment-matched with a Gaussian over its log-odds, and the
-matched variance is handed to the model as a non-trainable per-point noise kernel. Everything after
-that is the ordinary pipeline of `basic_example.py`; only the last step differs, mapping the
-predicted log-odds back to probabilities with `unwrap`.
+Mimosa only knows how to handle *Gaussian* observations. So how do we cluster tasks made of
+booleans? By turning them into Gaussian ones first, through **Laplace matching**: observations are
+binned along the input axis, each bin's Beta posterior over the success probability is
+moment-matched with a Gaussian over its log-odds, and the matched variance is given to the model as
+a known, non-trainable noise.
 
-Meant to be run cell-by-cell (e.g. in PyCharm/VSCode's "#%%" notebook mode), or as a plain script.
+Everything in between is the ordinary pipeline of [the basic example](basic_example.ipynb). Only the
+last step differs: predictions live in log-odds space and are mapped back to probabilities.
+
+Written using jupytext's py:percent format. This script can be run cell-by-cell or as a usual Python
+script.
 """
+
+# %% [markdown]
+"""
+## Getting started
+
+First, the usual imports and configs:
+"""
+
+# %%
 import jax
 
 jax.config.update("jax_enable_x64", True)
@@ -34,7 +51,7 @@ from mimosa.sampling import sample_gp
 key = jr.PRNGKey(42)
 plt.rcParams['figure.dpi'] = 300
 
-#%% 1. Configuration
+# %% 1. Configuration
 # The latent (continuous) processes are generated exactly as in basic_example.py; only their sign
 # reaches us, through a Bernoulli draw. N is large and the input range narrow on purpose: Laplace
 # matching aggregates the booleans into bins of width INTERVAL, and a bin needs enough draws for its
@@ -56,7 +73,7 @@ gen_config = ModelConfig(
 	isotopic_tasks=INTERVAL == 0.,
 )
 
-#%% 2. Generative parameters
+# %% 2. Generative parameters
 # The "true" parameters of the latent processes. Their scale sets how extreme the success
 # probabilities get: a latent value of +-2 already means a ~88% / ~12% chance of a True.
 true_params = Parameters(
@@ -66,7 +83,14 @@ true_params = Parameters(
 	noise_kernel=WhiteNoiseKernel(noise=1e-3),
 )
 
-#%% 3. Generate the latent processes, then Bernoulli-sample them
+# %% [markdown]
+"""
+The dataset is synthesised in two steps: first the usual continuous processes, then a coin flip at
+each point whose bias is given by the process. Only the flips are observed -- the latent processes
+are what the model will have to recover.
+"""
+
+# %% 3. Generate the latent processes, then Bernoulli-sample them
 key, gen_key, bernoulli_key = jr.split(key, 3)
 
 latent, _, _, true_mixture, true_params, _, _ = generate_data(
@@ -77,13 +101,26 @@ true_probs = jax.nn.sigmoid(latent.outputs)  # (T, N, C), the probability each d
 booleans = jr.bernoulli(bernoulli_key, true_probs).astype(float)
 dataset = Dataset(inputs=latent.inputs, outputs=booleans)
 
-#%% 4. Plot the raw booleans (coloured by each task's true cluster)
+# %% 4. Plot the raw booleans (coloured by each task's true cluster)
 fig, ax = plot_dataset(dataset, dims, mixture=true_mixture, figsize=(10, 6), alpha=.05)
 ax[0, 0].set_yticks([0, 1], ["False", "True"])
 fig.suptitle("Raw boolean observations (colored by true cluster)")
 plt.show()
 
-#%% 5. Laplace matching
+# %% [markdown]
+"""
+## Laplace matching
+
+Here is the interesting part. A single boolean says almost nothing, but a group of them has a
+success rate, and a success rate can be described by a Gaussian over its log-odds. `wrap` does
+exactly that, and returns a dataset the model can be fitted on as usual, plus the variance of each
+group in `known_output_noise`.
+
+The bin width is the trade-off to watch: wider bins mean more confident Gaussians, but a coarser
+view of the input axis.
+"""
+
+# %% 5. Laplace matching
 # `interval` bins the inputs on a lattice shared by every task (bin edges of width INTERVAL, anchored
 # at the global input minimum), so the wrapped inputs collapse to a single (1, B, I) block. Each
 # (task, bin) group becomes one Gaussian: its mean lands in `outputs`, its variance in
@@ -116,7 +153,7 @@ ax[0, 0].set_ylabel("log-odds")
 fig.suptitle("Laplace-matched dataset (log-odds of each bin's success rate)")
 plt.show()
 
-#%% 6. Instantiate the model
+# %% 6. Instantiate the model
 key, model_key = jr.split(key)
 model = BasicModel(prng_key=model_key, n_clusters=wrapped_dims.K)
 
@@ -138,7 +175,7 @@ init_params = Parameters(
 
 mixture_proportions = jnp.repeat(1 / wrapped_dims.K, wrapped_dims.K)
 
-#%% 7. Fit
+# %% 7. Fit
 fitted_params, fitted_mixture = model.fit(wrapped, fitted_grid, mixture_proportions, init_params, n_iter=50)
 
 # Cluster *labels* are arbitrary, so compare the clusterings rather than the labels: how often do
@@ -147,7 +184,7 @@ together_true = true_mixture.assignments[:, None] == true_mixture.assignments[No
 together_fit = fitted_mixture.assignments[:, None] == fitted_mixture.assignments[None, :]
 print(f"pairs of tasks clustered as in the truth: {float(jnp.mean(together_true == together_fit)):.0%}")
 
-#%% 8. Plot the fitted clusters, in log-odds space
+# %% 8. Plot the fitted clusters, in log-odds space
 hyperposterior = model.hyperpost(wrapped, fitted_grid, fitted_mixture, fitted_params, jitter=model.jitter)
 
 fig, ax = plot_dataset(wrapped, wrapped_dims, mixture=true_mixture, figsize=(10, 6), alpha=.1)
@@ -156,7 +193,7 @@ ax[0, 0].set_ylabel("log-odds")
 fig.suptitle("Fitted clusters (mean-processes), in log-odds space")
 plt.show()
 
-#%% 9. Predict, then sample
+# %% 9. Predict, then sample
 predictions = model.predict(wrapped, fitted_grid, fitted_mixture, fitted_params)
 
 t_id, c_id = 0, 0
@@ -167,7 +204,15 @@ key, sample_key = jr.split(key)
 n_samples = 256
 samples = vmap(lambda k: sample_gp(k, prediction.mean, prediction.covariance))(jr.split(sample_key, n_samples))
 
-#%% 10. Unwrap the samples back to probabilities, and compare with the truth
+# %% [markdown]
+"""
+## Back to probabilities
+
+The model predicts log-odds, so the last step is to map them back with `unwrap`. Because that
+mapping is non-linear, it must be applied to *samples* rather than to the predictive mean.
+"""
+
+# %% 10. Unwrap the samples back to probabilities, and compare with the truth
 # `unwrap` is the elementwise inverse link (a sigmoid here), so it has to be applied to the *samples*
 # rather than to the predictive mean: it does not commute with taking an average.
 probability_samples = approximator.unwrap(samples)  # (S, B)
@@ -190,7 +235,7 @@ ax.legend(loc="best")
 fig.suptitle(f"Predicted vs. true probability — task {t_id}, channel {c_id}")
 plt.show()
 
-#%% 11. The same prediction, drawn as bare samples
+# %% 11. The same prediction, drawn as bare samples
 # Each faint line is one draw from the predictive Gaussian, mapped through the sigmoid. The
 # percentile band above summarises exactly these curves; drawn individually they also show how a
 # single realisation behaves — in particular that the sigmoid pins samples against 0 and 1 wherever

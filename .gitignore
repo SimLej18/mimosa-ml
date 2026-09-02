@@ -1,4 +1,5 @@
-examples/dummy.csv
-examples/dummy_mo.csv
+docs/examples/data/dummy.csv
+docs/examples/data/dummy_mo.csv
 __pycache__/
 .ipynb_checkpoints
+docs/_build/

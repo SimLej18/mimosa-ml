@@ -1,14 +1,28 @@
+# %% tags=["remove-cell"]
+import importlib.util, subprocess, sys
+if importlib.util.find_spec("kernax") is None:
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "kernax"], check=True)
+# %% [markdown]
 """
-Basic multi-output usage example of mimosa-ml.
+# Multi-output usage of Mimosa
 
-Same pipeline as `basic_example.py`, but with `dims.O > 1` (correlated outputs) instead of the
-single-output default -- see the diff against `basic_example.py` for exactly what changes: wrapping
-the mean/kernels for multi-output (`BlockMean`/`ICMKernel`/`BlockDiagKernel`). Saving/loading the
-dataset is otherwise identical to the single-output case: one CSV, with `Output<o>_<c>` columns for
-every output/channel pair (see `mimosa.io.save_single_csv`).
+Same pipeline as [the basic example](basic_example.ipynb), but with `dims.O > 1`: each task now
+carries several outputs that are observed together and may be *correlated*. Only two things change:
+the means/kernels are wrapped for multi-output, and the grid builder becomes its multi-output
+counterpart. Everything else -- fitting, predicting, saving to a single CSV -- is untouched.
 
-Meant to be run cell-by-cell (e.g. in PyCharm/VSCode's "#%%" notebook mode), or as a plain script.
+Written using jupytext's py:percent format. This script can be run cell-by-cell or as a usual Python
+script.
 """
+
+# %% [markdown]
+"""
+## Getting started
+
+First, the usual imports and configs:
+"""
+
+# %%
 import jax
 
 jax.config.update("jax_enable_x64", True)
@@ -31,7 +45,13 @@ from mimosa.sampling import sample_gp
 key = jr.PRNGKey(42)
 plt.rcParams['figure.dpi']=300
 
-#%% 1. Configuration
+# %% [markdown]
+"""
+`O` is the number of correlated outputs. On top of the usual sharing options, `ModelConfig` now also
+says whether the outputs are observed at the same input locations (*isotopic*) or not.
+"""
+
+# %% 1. Configuration
 # Dimensions: T tasks, K clusters, I input dims, C channels, O correlated outputs, N points
 # observed per task, G points in the full grid.
 dims = Dimensions(T=32, K=2, I=1, C=1, O=3, N=50, G=150)
@@ -55,7 +75,15 @@ model_config = ModelConfig(
 # How many points to remove at random per task, to simulate missing data.
 removal_config = DataRemovalConfig(max_missing=5, random_missing_count=True, same_missing_across_outputs=False)
 
-#%% 2. Generative parameters
+# %% [markdown]
+"""
+The 4 parameters of the model (`cluster_mean`, `cluster_kernel`, `task_kernel`, `noise_kernel`) are
+the same as in the single-output case, but each is wrapped in a multi-output counterpart: `BlockMean`
+and `BlockDiagKernel` simply repeat the base object independently for each output, while `ICMKernel`
+also *correlates* the outputs with each other.
+"""
+
+# %% 2. Generative parameters
 # These are the "true" parameters used to synthesise the toy dataset below. Swap any kernel/mean for
 # another kernax one (e.g. MaternKernel, PeriodicKernel, LinearMean, ...) to change the shape of the
 # data generated. Wrapped for multi-output: BlockMean/BlockDiagKernel broadcast independently per
@@ -71,7 +99,7 @@ true_params = Parameters(
 # Try to change the number of latents, change the MO kernel (ICM/LCM/Convolution) or put one MO kernel for
 # clusters/tasks and BlockDiag for the other and see what happens!
 
-#%% 3. Generate synthetic data, then remove points at random
+# %% 3. Generate synthetic data, then remove points at random
 key, gen_key, removal_key = jr.split(key, 3)
 
 dataset, grid, hyperprior, true_mixture, true_params, cluster_means, tasks = generate_data(
@@ -79,17 +107,25 @@ dataset, grid, hyperprior, true_mixture, true_params, cluster_means, tasks = gen
 )
 dataset = RandomDataRemover()(removal_key, dataset, removal_config)
 
-#%% 3bis. Alternatively, you can load a dataset from a local file through load_csv.
+# %% 3bis. Alternatively, you can load a dataset from a local file through load_csv.
 # Check load_csv's doc or open the csv file to see the expected file format.
-save_csv("./dummy_mo.csv", dataset)
-dataset = load_csv("./dummy_mo.csv")
+save_csv("data/dummy_mo.csv", dataset)
+dataset = load_csv("data/dummy_mo.csv")
 
-#%% 4. Plot the raw dataset (coloured by each task's true cluster)
+# %% 4. Plot the raw dataset (coloured by each task's true cluster)
 fig, ax = plot_dataset(dataset, dims, mixture=true_mixture, figsize=(8 * dims.C, 6 * dims.O))
 fig.suptitle("Synthetic dataset (colored by true cluster)")
 plt.show()
 
-#%% 5. Instantiate the model
+# %% [markdown]
+"""
+## Training the model
+
+Only the grid builder differs from the single-output case: outputs may live on different input
+locations, so the grid has to know about `model_config`.
+"""
+
+# %% 5. Instantiate the model
 # n_clusters can differ from the true K above (the model doesn't know it); jitter is the numerical
 # stabiliser added before Cholesky factorizations, only increase it if you hit factorization errors.
 key, model_key = jr.split(key)
@@ -110,7 +146,7 @@ init_params = build_parameters(init_params, dims, model_config)
 # proportions of the dataset in each cluster, a priori
 mixture_proportions = jnp.repeat(1 / dims.K, dims.K)  # fixed, equal weight per cluster
 
-#%% 6. Fit
+# %% 6. Fit
 # Grid construction (union of every task's input points) isn't jit-compatible, so it's built once
 # here by the caller, outside of fit/predict, rather than owned by the model — see
 # mimosa.grid.GridBuilder. MultiOutputUnionGrid is UnionGrid's multi-output counterpart: it needs
@@ -119,7 +155,7 @@ fitted_grid = MultiOutputUnionGrid()(dataset, model_config)
 
 fitted_params, fitted_mixture = model.fit(dataset, fitted_grid, mixture_proportions, init_params, n_iter=50)
 
-#%% 7. Plot the fitted clusters (mean-processes)
+# %% 7. Plot the fitted clusters (mean-processes)
 hyperposterior = model.hyperpost(dataset, fitted_grid, fitted_mixture, fitted_params, jitter=model.jitter)
 
 fig, ax = plot_dataset(dataset, dims, mixture=true_mixture, figsize=(8 * dims.C, 6 * dims.O), alpha=.1)
@@ -127,21 +163,21 @@ fig, ax = plot_clusters(fitted_grid, dims, hyperposterior=hyperposterior, figsiz
 fig.suptitle("Fitted clusters (mean-processes) on the dataset")
 plt.show()
 
-#%% 8. Predict
+# %% 8. Predict
 predictions = model.predict(dataset, fitted_grid, fitted_mixture, fitted_params)  # MultivariateNormal, batched (T, K, C, O*G)
 
 t_id, c_id = 0, 0
 k_id = int(fitted_mixture.assignments[t_id])  # task's dominant cluster
 prediction = predictions[t_id, k_id, c_id]
 
-#%% 9. Plot the prediction: observed points, cluster means, and predictive mean + confidence interval
+# %% 9. Plot the prediction: observed points, cluster means, and predictive mean + confidence interval
 fig, ax = plot_single_task_prediction(
 	dataset, fitted_grid, dims, hyperposterior, fitted_mixture, t_id, c_id, prediction=prediction, figsize=(8 * dims.C, 6 * dims.O)
 )
 fig.suptitle(f"Prediction — task {t_id}, channel {c_id}")
 plt.show()
 
-#%% 10. Draw samples from the prediction and plot them alongside it
+# %% 10. Draw samples from the prediction and plot them alongside it
 key, sample_key = jr.split(key)
 n_samples = 64
 sample_keys = jr.split(sample_key, n_samples)

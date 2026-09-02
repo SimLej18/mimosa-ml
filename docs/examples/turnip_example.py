@@ -1,7 +1,7 @@
 # %% tags=["remove-cell"]
 import importlib.util, subprocess, sys
-if importlib.util.find_spec("kernax") is None:
-    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "kernax"], check=True)
+if importlib.util.find_spec("mimosa-ml") is None:
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "mimosa-ml"], check=True)
 # %% [md]
 """
 # Predicting turnip prices in Animal Crossing

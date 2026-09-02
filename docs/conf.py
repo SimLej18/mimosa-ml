@@ -27,6 +27,10 @@ nb_execution_mode = "cache"
 nb_execution_timeout = 600          # JIT + Cholesky, sois large
 nb_execution_raise_on_error = True  # un exemple cassé fait échouer le build
 
+# La barre de progression de jax-tqdm (et son TqdmWarning quand ipywidgets n'est pas installé)
+# passe par stderr : inutile dans une page statique.
+nb_output_stderr = "remove"
+
 html_theme = "sphinx_book_theme"
 html_theme_options = {
     "repository_url": "https://github.com/SimLej18/mimosa-ml",

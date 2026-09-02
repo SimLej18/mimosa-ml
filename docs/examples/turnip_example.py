@@ -1,7 +1,15 @@
 # %% tags=["remove-cell"]
 import importlib.util, subprocess, sys
-if importlib.util.find_spec("mimosa-ml") is None:
+from pathlib import Path
+if importlib.util.find_spec("mimosa") is None:
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", "mimosa-ml"], check=True)
+# On Colab the notebook runs from /content, so fetch the dataset the example reads.
+from urllib.request import urlretrieve
+DATA_URL = "https://raw.githubusercontent.com/SimLej18/mimosa-ml/main/docs/examples/data"
+Path("data").mkdir(exist_ok=True)
+for name in ("turnip_train.csv", "turnip_test.csv"):
+    if not Path("data", name).exists():
+        urlretrieve(f"{DATA_URL}/{name}", Path("data", name))
 # %% [md]
 """
 # Predicting turnip prices in Animal Crossing

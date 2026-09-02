@@ -1,7 +1,10 @@
 # %% tags=["remove-cell"]
 import importlib.util, subprocess, sys
-if importlib.util.find_spec("mimosa-ml") is None:
+from pathlib import Path
+if importlib.util.find_spec("mimosa") is None:
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", "mimosa-ml"], check=True)
+# On Colab the notebook runs from /content, where the example's data folder does not exist.
+Path("data").mkdir(exist_ok=True)
 # %% [markdown]
 """
 # Multi-output usage of Mimosa

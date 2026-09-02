@@ -1,6 +1,7 @@
 # %% tags=["remove-cell"]
 import importlib.util, subprocess, sys
-if importlib.util.find_spec("mimosa-ml") is None:
+from pathlib import Path
+if importlib.util.find_spec("mimosa") is None:
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", "mimosa-ml"], check=True)
 # %% [markdown]
 """

@@ -1,3 +1,7 @@
+from pathlib import Path
+
+from jupyter_cache import get_cache
+
 project = "mimosa-ml"
 author = "Simon Lejoly"
 copyright = "2026, Simon Lejoly"
@@ -11,6 +15,13 @@ extensions = [
 ]
 
 myst_enable_extensions = ["dollarmath", "amsmath", "colon_fence"]
+
+# jupyter-cache initialise son dossier et sa base SQLite paresseusement, au premier accès. Sous
+# `sphinx-build -j auto` (la commande par défaut de Read the Docs), plusieurs workers le font en
+# même temps et le build casse (FileExistsError, puis "table settings already exists").
+# On fixe le chemin et on initialise le cache ici, dans le process parent, avant le fork.
+nb_execution_cache_path = str(Path(__file__).parent / "_build" / ".jupyter_cache")
+get_cache(nb_execution_cache_path).db
 
 nb_execution_mode = "cache"
 nb_execution_timeout = 600          # JIT + Cholesky, sois large

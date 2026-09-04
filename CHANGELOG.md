@@ -9,6 +9,21 @@ before upgrading.
 
 ---
 
+## [Unreleased]
+
+### Added
+
+* `n_restarts` argument to `soft_kmeans()` and `KMeansMixtureInitialiser`: run that
+  many independently initialised k-means and keep the one reaching the
+  lowest free energy. 
+
+### Breaking changes
+
+* `n_restarts` defaults to `8`, so clustering — and hence any fit that starts from it — changes
+  for a given PRNG key, even at `n_restarts=1`. Expect better optima, not identical results.
+
+---
+
 ## [v0.3.0-alpha] — 2026-08-31
 
 Laplace matching: non-Gaussian observations (binary, counts, durations) can now be fitted, by

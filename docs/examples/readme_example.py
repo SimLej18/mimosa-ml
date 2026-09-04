@@ -32,12 +32,10 @@ dataset, grid, hyperprior, mixture, parameters, cluster_means, tasks = generate_
 # Fit a model on the generated dataset, starting from the same parameters
 fit_grid = UnionGrid()(dataset.inputs)
 model = BasicModel(jr.PRNGKey(1), n_clusters=dims.K)
-fitted_params, fitted_mixture = model.fit(dataset, fit_grid, parameters, n_iter=50)
+hyperposterior, fitted_mixture, fitted_params = model.fit(dataset, fit_grid, parameters, n_iter=50)
 
 # Predict the posterior distribution of every task, in every cluster
 predictions = model.predict(dataset, fit_grid, fitted_mixture, fitted_params)
-hyperposterior = model.hyperpost(dataset, fit_grid, fitted_mixture, fitted_params)
-
 # Plot the fitted mean-processes over the dataset
 fig, ax = plot_dataset(dataset, dims, mixture=mixture, alpha=.3)
 fig, ax = plot_clusters(fit_grid, dims, hyperposterior=hyperposterior, fig=fig, ax=ax, legend=False)

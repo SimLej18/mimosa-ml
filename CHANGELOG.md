@@ -13,6 +13,10 @@ before upgrading.
 
 ### Added
 
+* `init_hyperposterior`, `init_mixture`, `freeze_hyperposterior`, `freeze_mixture`,
+  `freeze_cluster_parameters` and `freeze_task_parameters` arguments to `BasicModel.fit()`: warm-start
+  the fit from a known hyperposterior/mixture, and hold any of the four blocks fixed across the VEM
+  loop.
 * `n_restarts` argument to `soft_kmeans()` and `KMeansMixtureInitialiser`: run that
   many independently initialised k-means and keep the one reaching the
   lowest free energy. 
@@ -33,7 +37,15 @@ before upgrading.
   for a given PRNG key, even at `n_restarts=1`. Expect better optima, not identical results.
 * `Mixture.proportions` is a read-only property derived from `responsibilities`, no longer a field:
   `Mixture(proportions=..., responsibilities=...)` raises. Build it as `Mixture(responsibilities=...)`.
-* `BasicModel.fit` drops its `mixture_proportions` argument.
+* `BasicModel.fit()` returns `(hyperposterior, mixture, parameters)` instead of
+  `(parameters, mixture)`. The hyperposterior is now computed before the loop and refreshed after
+  each M-step, so callers that only need it for plotting or inspection can take it from `fit()`
+  rather than recomputing it via `hyperpost()`. Note it is the hyperposterior the returned
+  `parameters` were optimised against, i.e. built from the mixture of the previous iteration --
+  `hyperpost(dataset, grid, mixture, parameters)` on the returned pair still differs from it by one
+  mixture update (negligible at convergence, but not bit-identical). Update unpacking:
+  `_, mixture, params = model.fit(...)`.
+* `BasicModel.fit()` drops its `mixture_proportions` argument.
 
 ---
 

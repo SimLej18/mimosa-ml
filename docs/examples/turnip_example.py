@@ -204,7 +204,7 @@ Here we are! Let's instantiate the model and train it!
 key, model_key = jr.split(key)
 model = BasicModel(prng_key=model_key, n_clusters=dims.K)
 
-fitted_params, fitted_mixture = model.fit(train_data, grid, init_params, n_iter=100)
+hyperposterior, fitted_mixture, fitted_params = model.fit(train_data, grid, init_params, n_iter=100)
 
 print("cluster sizes:", jnp.bincount(fitted_mixture.assignments, length=dims.K))
 
@@ -219,8 +219,6 @@ With the optimised parameters and mixture coefficients, we can now see what the 
 
 # %%
 # Plot the fitted clusters (mean-processes) over the data
-hyperposterior = model.hyperpost(train_data, grid, fitted_mixture, fitted_params, jitter=model.jitter)
-
 fig, ax = plot_dataset(train_data, dims, mixture=fitted_mixture, figsize=(10, 6), alpha=.1)
 fig, ax = plot_clusters(grid, dims, hyperposterior=hyperposterior, figsize=(10, 6), fig=fig, ax=ax)
 fig.suptitle("Fitted price patterns (mean-processes), weeks colored by cluster")

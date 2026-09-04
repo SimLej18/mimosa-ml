@@ -146,11 +146,9 @@ init_params = build_parameters(init_params, dims, model_config)
 # mimosa.grid.GridBuilder. Swap UnionGrid for another GridBuilder to change how the grid is built.
 fitted_grid = UnionGrid()(dataset.inputs)
 
-fitted_params, fitted_mixture = model.fit(dataset, fitted_grid, init_params, n_iter=50)
+hyperposterior, fitted_mixture, fitted_params = model.fit(dataset, fitted_grid, init_params, n_iter=50)
 
 # %% 7. Plot the fitted clusters (mean-processes)
-hyperposterior = model.hyperpost(dataset, fitted_grid, fitted_mixture, fitted_params, jitter=model.jitter)
-
 fig, ax = plot_dataset(dataset, dims, mixture=true_mixture, figsize=(8 * dims.C, 6), alpha=.1)
 fig, ax = plot_clusters(fitted_grid, dims, hyperposterior=hyperposterior, figsize=(8 * dims.C, 6), fig=fig, ax=ax)
 fig.suptitle("Fitted clusters (mean-processes) on the dataset")

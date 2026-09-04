@@ -175,7 +175,7 @@ init_params = Parameters(
 		wrapped.known_output_noise, wrapped_dims, model_config))
 
 # %% 7. Fit
-fitted_params, fitted_mixture = model.fit(wrapped, fitted_grid, init_params, n_iter=50)
+hyperposterior, fitted_mixture, fitted_params = model.fit(wrapped, fitted_grid, init_params, n_iter=50)
 
 # Cluster *labels* are arbitrary, so compare the clusterings rather than the labels: how often do
 # two tasks end up together in the fit exactly when they were together in the truth?
@@ -184,8 +184,6 @@ together_fit = fitted_mixture.assignments[:, None] == fitted_mixture.assignments
 print(f"pairs of tasks clustered as in the truth: {float(jnp.mean(together_true == together_fit)):.0%}")
 
 # %% 8. Plot the fitted clusters, in log-odds space
-hyperposterior = model.hyperpost(wrapped, fitted_grid, fitted_mixture, fitted_params, jitter=model.jitter)
-
 fig, ax = plot_dataset(wrapped, wrapped_dims, mixture=true_mixture, figsize=(10, 6), alpha=.1)
 fig, ax = plot_clusters(fitted_grid, wrapped_dims, hyperposterior=hyperposterior, figsize=(10, 6), fig=fig, ax=ax)
 ax[0, 0].set_ylabel("log-odds")

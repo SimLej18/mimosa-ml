@@ -140,16 +140,13 @@ init_params = Parameters(
 # (same helper generate_data uses internally), so their shapes line up with what model.fit expects.
 init_params = build_parameters(init_params, dims, model_config)
 
-# proportions of the dataset in each cluster, a priori
-mixture_proportions = jnp.repeat(1 / dims.K, dims.K)  # fixed, equal weight per cluster
-
 # %% 6. Fit
 # Grid construction (union of every task's input points) isn't jit-compatible, so it's built once
 # here by the caller, outside of fit/predict, rather than owned by the model — see
 # mimosa.grid.GridBuilder. Swap UnionGrid for another GridBuilder to change how the grid is built.
 fitted_grid = UnionGrid()(dataset.inputs)
 
-fitted_params, fitted_mixture = model.fit(dataset, fitted_grid, mixture_proportions, init_params, n_iter=50)
+fitted_params, fitted_mixture = model.fit(dataset, fitted_grid, init_params, n_iter=50)
 
 # %% 7. Plot the fitted clusters (mean-processes)
 hyperposterior = model.hyperpost(dataset, fitted_grid, fitted_mixture, fitted_params, jitter=model.jitter)

@@ -32,7 +32,7 @@ dataset, grid, hyperprior, mixture, parameters, cluster_means, tasks = generate_
 # Fit a model on the generated dataset, starting from the same parameters
 fit_grid = UnionGrid()(dataset.inputs)
 model = BasicModel(jr.PRNGKey(1), n_clusters=dims.K)
-fitted_params, fitted_mixture = model.fit(dataset, fit_grid, mixture.proportions, parameters, n_iter=50)
+fitted_params, fitted_mixture = model.fit(dataset, fit_grid, parameters, n_iter=50)
 
 # Predict the posterior distribution of every task, in every cluster
 predictions = model.predict(dataset, fit_grid, fitted_mixture, fitted_params)

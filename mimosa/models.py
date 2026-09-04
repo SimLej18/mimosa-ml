@@ -113,14 +113,15 @@ class BasicModel(AbstractModel):
         self.jitter = jitter
 
     @eqx.filter_jit
-    def fit(self, dataset: Dataset, grid: Grid, mixture_proportions: Array, parameters: Parameters,
+    def fit(self, dataset: Dataset, grid: Grid, parameters: Parameters,
             n_iter: int = 50) -> tuple[Parameters, Mixture]:
         """
         Fit the model's cluster/task hyperparameters and mixture responsibilities to a Dataset.
 
-        Alternates, for `n_iter` iterations: computing the hyperposterior, updating the mixture
-        responsibilities, optimising the cluster hyperparameters, then the task hyperparameters
-        (each by maximum-a-posteriori), and updating the mixture responsibilities again.
+        Alternates, for `n_iter` iterations:
+        1) computing the hyperposterior
+        2) updating the mixture
+        3) optimising the parameters
 
         Parameters
         ----------
@@ -129,8 +130,6 @@ class BasicModel(AbstractModel):
         grid
             Grid of points and mappings of `dataset`'s inputs onto it, e.g. from
             `mimosa.grid.UnionGrid`.
-        mixture_proportions
-            Fixed mixture proportions of each mean-process.
         parameters
             Initial model parameters (mean, kernels).
         n_iter
@@ -141,10 +140,9 @@ class BasicModel(AbstractModel):
         parameters
             Fitted model parameters.
         mixture
-            Fitted mixture, with `mixture_proportions` unchanged and updated responsibilities.
+            Fitted mixture.
         """
         mixture = self.mixture_initialiser(dataset)
-        mixture = Mixture(proportions=mixture_proportions, responsibilities=mixture.responsibilities)
 
         @loop_tqdm(n_iter, desc=f"Training model for {n_iter} iterations:")
         def step(i, args):
@@ -153,9 +151,14 @@ class BasicModel(AbstractModel):
             hyperposterior = self.hyperpost(
                 dataset, grid, mixture, parameters, jitter=self.jitter)
 
-            mixture = self.mixture_updater(
-                dataset, grid, parameters.task_kernel + parameters.noise_kernel,
-                hyperposterior, mixture, jitter=self.jitter)
+            # We do not update mixture at first iter to help convergence
+            mixture = jax.lax.cond(
+                i != 0,
+                lambda m: self.mixture_updater(
+                    dataset, grid, parameters.task_kernel + parameters.noise_kernel,
+                    hyperposterior, m, jitter=self.jitter),
+                lambda m: m,
+                mixture)
 
             cluster_mean, cluster_kernel = self.cluster_optimiser(
                 parameters.cluster_mean, parameters.cluster_kernel,
@@ -169,15 +172,6 @@ class BasicModel(AbstractModel):
             parameters = Parameters(
                 cluster_mean=cluster_mean, cluster_kernel=cluster_kernel,
                 task_kernel=task_kernel, noise_kernel=noise_kernel)
-
-            # We do not update mixture at first iter to help convergence
-            mixture = jax.lax.cond(
-                i != 0,
-                lambda m: self.mixture_updater(
-                    dataset, grid, parameters.task_kernel + parameters.noise_kernel,
-                    hyperposterior, m, jitter=self.jitter),
-                lambda m: m,
-                mixture)
 
             return parameters, mixture
 

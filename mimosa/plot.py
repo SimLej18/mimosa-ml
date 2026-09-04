@@ -330,7 +330,7 @@ def plot_dataset(
 		colors = {t: "C0" for t in t_ids}
 		handles = []
 	else:
-		K = mixture.proportions.shape[0]
+		K = mixture.responsibilities.shape[1]
 		palette = _cluster_palette(K)
 		assignments = np.asarray(mixture.assignments)
 		colors = {t: palette[assignments[t]] for t in t_ids}

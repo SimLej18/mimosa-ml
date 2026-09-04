@@ -298,13 +298,20 @@ class Mixture(eqx.Module):
 
 	Attributes
 	----------
-	proportions
-		Mixture weight of each mean-process.
 	responsibilities
 		Probability of each task belonging to each mean-process.
 	"""
-	proportions: Float[Array, "K"]
 	responsibilities: Float[Array, "T K"]
+
+	@property
+	def proportions(self) -> Float[Array, "K"]:
+		"""
+		Mixture weight of each mean-process, i.e. the mean responsibility towards it.
+
+		This is the maximiser of the ELBO in the mixture weights, so it is derived from
+		`responsibilities` rather than stored: the two can never disagree.
+		"""
+		return jnp.mean(self.responsibilities, axis=0)
 
 	@property
 	def assignments(self) -> Float[Array, "T"]:

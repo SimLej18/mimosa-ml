@@ -136,7 +136,7 @@ class KMeansMixtureInitialiser(MixtureInitialiser):
 		features = jnp.nan_to_num(features)
 
 		_, resp = soft_kmeans(self.prng_key, features, self.n_clusters, n_restarts=self.n_restarts)
-		return Mixture(proportions=jnp.ones(self.n_clusters)/self.n_clusters, responsibilities=resp)
+		return Mixture(responsibilities=resp)
 
 
 def update_mixture(dataset: Dataset, grid: Grid, task_kernel: AbstractKernel, hyperposterior: Hyperposterior,
@@ -155,7 +155,7 @@ def update_mixture(dataset: Dataset, grid: Grid, task_kernel: AbstractKernel, hy
 	hyperposterior
 		Current posterior distribution over each mean-process's values at the grid points.
 	mixture
-		Current mixture, whose proportions are kept and responsibilities are recomputed.
+		Current mixture, whose proportions weight the likelihoods as a prior.
 	jitter
 		Diagonal jitter added before Cholesky factorizations, for numerical stability.
 
@@ -168,7 +168,7 @@ def update_mixture(dataset: Dataset, grid: Grid, task_kernel: AbstractKernel, hy
 		task_llhs = jnp.sum(tasks_nlls(dataset, grid, task_kernel(dataset.clean_inputs[0], output_ids=output_ids), hyperposterior, jitter=jitter), axis=-1)
 	else:
 		task_llhs = jnp.sum(tasks_nlls(dataset, grid, task_kernel(dataset.clean_inputs, output_ids=dataset.output_ids), hyperposterior, jitter=jitter), axis=-1)
-	return Mixture(proportions=mixture.proportions, responsibilities=softmax(jnp.log(mixture.proportions[None, :]) - task_llhs, axis=1))
+	return Mixture(responsibilities=softmax(jnp.log(mixture.proportions[None, :]) - task_llhs, axis=1))
 
 
 class MixtureUpdater(eqx.Module):

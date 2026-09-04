@@ -17,10 +17,21 @@ before upgrading.
   many independently initialised k-means and keep the one reaching the
   lowest free energy. 
 
+### Fixed
+
+* `Mixture.proportions` never left `1/K`: the VEM loop had no M-step for them. They now follow
+  mean of the responsibilities.
+* `BasicModel.fit` updated the responsibilities twice per iteration, the second time against a
+  stale hyperposterior. Only the update following the hyperposterior remains, and the first-
+  iteration skip moved onto it.
+
 ### Breaking changes
 
 * `n_restarts` defaults to `8`, so clustering — and hence any fit that starts from it — changes
   for a given PRNG key, even at `n_restarts=1`. Expect better optima, not identical results.
+* `Mixture.proportions` is a read-only property derived from `responsibilities`, no longer a field:
+  `Mixture(proportions=..., responsibilities=...)` raises. Build it as `Mixture(responsibilities=...)`.
+* `BasicModel.fit` drops its `mixture_proportions` argument.
 
 ---
 

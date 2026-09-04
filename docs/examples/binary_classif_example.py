@@ -174,10 +174,8 @@ init_params = Parameters(
 	noise_kernel=init_params.noise_kernel + known_noise_kernel(
 		wrapped.known_output_noise, wrapped_dims, model_config))
 
-mixture_proportions = jnp.repeat(1 / wrapped_dims.K, wrapped_dims.K)
-
 # %% 7. Fit
-fitted_params, fitted_mixture = model.fit(wrapped, fitted_grid, mixture_proportions, init_params, n_iter=50)
+fitted_params, fitted_mixture = model.fit(wrapped, fitted_grid, init_params, n_iter=50)
 
 # Cluster *labels* are arbitrary, so compare the clusterings rather than the labels: how often do
 # two tasks end up together in the fit exactly when they were together in the truth?

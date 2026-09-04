@@ -502,9 +502,8 @@ def generate_data(
 	cluster_means = sample_clusters(subkeys, hyperprior.mean, hyperprior.covariance)  # Shape (K, C, O*G)
 
 	# Step 6: assign tasks to clusters
-	proportions = jnp.repeat(1/dims.K, dims.K)
 	responsibilities = jnp.eye(dims.K)[jnp.array(jnp.floor(jnp.arange(dims.T) / dims.T * dims.K), dtype=int)]  # Shape (T, K)
-	mixture = Mixture(proportions=proportions, responsibilities=responsibilities)
+	mixture = Mixture(responsibilities=responsibilities)
 
 	# Step 7: sample task processes for each task from the task kernel, evaluated on the task inputs
 	task_means_on_grid = cluster_means[jnp.argmax(mixture.responsibilities, axis=1), ...]  # Shape (T, C, O*G)

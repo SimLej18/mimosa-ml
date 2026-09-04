@@ -188,13 +188,11 @@ init_params = build_parameters(init_params, dims, model_config)
 
 # %% [md]
 """
-Finally, 2 last details: the mixture proportions (which is a prior that we will set to 1/K for each cluster, as we 
-don't have reasons to think our dataset is not balanced) and the training grid (which we just set to the union of 
-input points, so 0..12)
+Finally, one last detail: the training grid, which we just set to the union of input points, so 0..12. The mixture
+proportions need no setting -- they are read off the responsibilities the model learns (`Mixture.proportions`).
 """
 
 # %%
-mixture_proportions = jnp.repeat(1 / dims.K, dims.K)
 grid = UnionGrid()(train_data.inputs)
 
 # %% [md]
@@ -206,7 +204,7 @@ Here we are! Let's instantiate the model and train it!
 key, model_key = jr.split(key)
 model = BasicModel(prng_key=model_key, n_clusters=dims.K)
 
-fitted_params, fitted_mixture = model.fit(train_data, grid, mixture_proportions, init_params, n_iter=100)
+fitted_params, fitted_mixture = model.fit(train_data, grid, init_params, n_iter=100)
 
 print("cluster sizes:", jnp.bincount(fitted_mixture.assignments, length=dims.K))
 
@@ -305,8 +303,7 @@ context = Dataset(inputs=jnp.where(seen[..., None], test_inputs, jnp.nan),
                   outputs=jnp.where(seen[..., None], test_data.outputs, jnp.nan))
 
 
-prior_mixture = Mixture(proportions=fitted_mixture.proportions,
-                  responsibilities=jnp.full((dims.T, dims.K), 1 / dims.K))
+prior_mixture = Mixture(responsibilities=jnp.full((dims.T, dims.K), 1 / dims.K))
 
 
 context_grid = Grid(points=grid.points,

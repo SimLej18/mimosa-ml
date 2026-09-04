@@ -4,7 +4,7 @@ Multi-task gaussian process modular framework.
 
 ```{toctree}
 :maxdepth: 1
-:caption: Tutoriels
+:caption: Tutorials
 
 examples/basic_example
 examples/basic_mo_example

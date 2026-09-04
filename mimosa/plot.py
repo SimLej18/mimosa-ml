@@ -151,14 +151,17 @@ def _mvn_cell(obj, grid: Grid, dims: Dimensions, k_id: int, c_id: int, o_id: int
 	return obj.mean[k, c, rows], obj.covariance[k, c][rows][:, rows]
 
 
-def _cluster_palette(K: int) -> list:
+def _palette(n: int) -> list:
 	"""
-	Build one color per cluster index in `[0, K)`. Shared by `plot_dataset` (colored by mixture
-	assignment) and `plot_clusters` (colored by cluster index), so the two can be composed on the
-	same axes with matching colors.
+	Build one color per index in `[0, n)`. Shared by `plot_dataset` (colored by mixture assignment,
+	or by task index) and `plot_clusters` (colored by cluster index), so the two can be composed on
+	the same axes with matching cluster colors.
+
+	Colors cycle once `n` exceeds the colormap's size (10 or 20), so distinct indices can share a
+	color for large `n`.
 	"""
-	cmap = plt.get_cmap("tab10" if K <= 10 else "tab20")
-	return [cmap(k % cmap.N) for k in range(K)]
+	cmap = plt.get_cmap("tab10" if n <= 10 else "tab20")
+	return [cmap(i % cmap.N) for i in range(n)]
 
 
 def plot_channel(
@@ -287,12 +290,14 @@ def plot_dataset(
 	fig=None,
 	ax=None,
 	figsize: tuple[float, float] | None = None,
+	color_by_task: bool = False,
 	legend: bool = True,
 	**scatter_kwargs,
 ):
 	"""
 	Scatter-plot a Dataset's observed points, looping `plot_task` over tasks. Points are colored
-	by each task's hard cluster assignment if `mixture` is given.
+	by each task's hard cluster assignment if `mixture` is given, or by task index if
+	`color_by_task` is True.
 
 	Parameters
 	----------
@@ -310,8 +315,13 @@ def plot_dataset(
 		have shape `(len(o_id), len(c_id))`. A new figure/axes grid is created if None.
 	figsize
 		Passed to `plt.subplots` when a new figure is created.
+	color_by_task
+		If True, give every task its own color (from the same palette as the cluster colors),
+		instead of coloring by cluster assignment. Takes precedence over `mixture`.
 	legend
-		If True and `mixture` is given, add a legend mapping colors to cluster indices.
+		If True, add a legend mapping colors to cluster indices (if `mixture` is given) or to task
+		indices (if `color_by_task` is True). Skipped when more tasks are plotted than the palette
+		has distinct colors, since colors then repeat across tasks.
 	**scatter_kwargs
 		Extra keyword arguments forwarded to `ax.scatter`, overriding the defaults (s=15, alpha=0.7).
 
@@ -326,12 +336,20 @@ def plot_dataset(
 
 	fig, ax = _get_fig_ax(fig, ax, len(o_ids), len(c_ids), figsize=figsize)
 
-	if mixture is None:
+	if color_by_task:
+		palette = _palette(dims.T)
+		colors = {t: palette[t] for t in t_ids}
+		# Colors repeat past the palette's size, which would make a legend misleading (and unwieldy).
+		handles = [
+			plt.Line2D([0], [0], marker="o", linestyle="", color=palette[t], label=f"task {t}")
+			for t in t_ids
+		] if len(t_ids) <= len(set(palette)) else []
+	elif mixture is None:
 		colors = {t: "C0" for t in t_ids}
 		handles = []
 	else:
 		K = mixture.responsibilities.shape[1]
-		palette = _cluster_palette(K)
+		palette = _palette(K)
 		assignments = np.asarray(mixture.assignments)
 		colors = {t: palette[assignments[t]] for t in t_ids}
 		handles = [
@@ -563,7 +581,7 @@ def plot_clusters(
 
 	fig, ax = _get_fig_ax(fig, ax, len(o_ids), len(c_ids), figsize=figsize)
 
-	palette = _cluster_palette(dims.K)
+	palette = _palette(dims.K)
 
 	for k in k_ids:
 		plot_single_cluster(
@@ -677,7 +695,7 @@ def plot_single_task_prediction(
 	fig, ax = _get_fig_ax(fig, ax, len(o_ids), 1, figsize=figsize)
 
 	K = hyperposterior.mean.shape[0]
-	palette = _cluster_palette(K)
+	palette = _palette(K)
 	weights = np.asarray(mixture.responsibilities[t_id])
 
 	scatter_kwargs = _DEFAULT_SCATTER_KWARGS | scatter_kwargs

@@ -16,6 +16,8 @@ before upgrading.
 * `n_restarts` argument to `soft_kmeans()` and `KMeansMixtureInitialiser`: run that
   many independently initialised k-means and keep the one reaching the
   lowest free energy. 
+* `color_by_task` argument to `plot_dataset()`: color each task with its own color instead of by
+  cluster assignment.
 
 ### Fixed
 

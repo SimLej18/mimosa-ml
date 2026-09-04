@@ -9,7 +9,7 @@ import jax.lax as jlx
 from jax import Array, jit, vmap
 from jax.lax import fori_loop
 
-from mimosa import DEFAULT_JITTER
+from mimosa import DEFAULT_JITTER, PAD_INDEX
 
 
 def cho_factor(cov: Array, jitter: Array = DEFAULT_JITTER) -> Array:
@@ -78,14 +78,14 @@ def searchsorted_2d(vector: Array, matrix: Array) -> Array:
 	Parameters
 	----------
 	vector
-		Vector to search for. If it contains NaN in any component, `len(matrix)` is returned
+		Vector to search for. If it contains NaN in any component, `PAD_INDEX` is returned
 		unconditionally.
 	matrix
 		Matrix to search in.
 
 	Returns
 	-------
-	Index of `vector` in `matrix`, or `len(matrix)` if not found.
+	Index of `vector` in `matrix`, or `PAD_INDEX` if not found.
 	"""
 	n = matrix.shape[0]
 	steps = int(np.ceil(np.log2(n))) + 1  # static (n is a shape, always a Python int) -> fori_loop-safe
@@ -106,8 +106,7 @@ def searchsorted_2d(vector: Array, matrix: Array) -> Array:
 
 	safe_idx = jnp.minimum(lo, n - 1)
 	found = (lo < n) & jnp.all(matrix[safe_idx] == vector)
-	result = jnp.where(found, lo, n)
-	return jnp.where(jnp.any(jnp.isnan(vector)), n, result)
+	return jnp.where(found, lo, PAD_INDEX)
 
 
 searchsorted_2d_vectorised = jit(vmap(searchsorted_2d, in_axes=(0, None)))
@@ -129,7 +128,7 @@ def lexicographic_sort(arr: Array) -> Array:
 	return arr[jnp.lexsort(arr.T[::-1])]
 
 
-def compute_mapping(grid: Array, points: Array) -> Array:
+def find_exact_mappings(grid: Array, points: Array) -> Array:
 	"""
 	Find the indices of `points` in `grid`.
 
@@ -143,10 +142,13 @@ def compute_mapping(grid: Array, points: Array) -> Array:
 
 	Returns
 	-------
-	Indices of `points` in `grid`.
+	Index of each of `points` in `grid`, or `PAD_INDEX` for a point that is not a grid point (NaN
+	included).
 	"""
 	if grid.shape[-1] == 1:
 		# We only have 1 input dimension, and we can use the fast jnp.searchsorted function
-		return jnp.searchsorted(grid.squeeze(axis=-1), points.squeeze(axis=-1))
+		grid, points = grid.squeeze(axis=-1), points.squeeze(axis=-1)
+		idx = jnp.searchsorted(grid, points)  # insertion point, so the hit must still be verified
+		return jnp.where(grid[jnp.minimum(idx, len(grid) - 1)] == points, idx, PAD_INDEX)
 	# Multiple input dimensions requires our custom lexicographic search
 	return searchsorted_2d_vectorised(points, grid)

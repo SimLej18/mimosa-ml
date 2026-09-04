@@ -3,17 +3,26 @@ Build grids of input points from task inputs, and map each task's inputs onto th
 """
 from abc import abstractmethod
 import jax.numpy as jnp
-from jax import Array, vmap
+from jax import Array
 import equinox as eqx
 
-from mimosa.linalg import compute_mapping, lexicographic_sort
+from mimosa import PAD_INDEX
+from mimosa.linalg import lexicographic_sort
+from mimosa.mappings import InputMapper, ExactInputMapper
 from mimosa.data_structures import Grid, Dataset, ModelConfig
 
 
 class GridBuilder(eqx.Module):
     """
     Base class for building a Grid from task inputs.
+
+    Attributes
+    ----------
+    input_mapper
+        Maps each task's input points onto the grid points. Defaults to `ExactInputMapper`.
     """
+    input_mapper: InputMapper = ExactInputMapper()
+
     def __call__(self, inputs: Array, *args, **kwargs) -> Grid:
         """
         Build the full Grid from `inputs`: `compute_points` followed by `compute_mappings`.
@@ -48,10 +57,9 @@ class GridBuilder(eqx.Module):
         """
         ...
 
-    @abstractmethod
     def compute_mappings(self, points: Array, inputs: Array, *args, **kwargs) -> Array:
         """
-        Map each of `inputs`' points to its index in `points`.
+        Map each of `inputs`' points to its index in `points`, with `input_mapper`.
 
         Parameters
         ----------
@@ -59,13 +67,13 @@ class GridBuilder(eqx.Module):
             Grid points to map `inputs` onto, as returned by `compute_points`.
         inputs
             Input points of every task. A padding point (NaN on every input dimension) maps to
-            `len(points)`, i.e. strictly outside the grid.
+            `mimosa.mappings.PAD_INDEX`.
 
         Returns
         -------
         Index of each of `inputs`' points in `points`.
         """
-        ...
+        return self.input_mapper(points, inputs, *args, **kwargs)
 
 
 class UnionGrid(GridBuilder):
@@ -84,12 +92,6 @@ class UnionGrid(GridBuilder):
         if points.shape[-1] == 1:
             return jnp.sort(jnp.unique(points.reshape(-1)))[..., None]  # (G, 1)
         return lexicographic_sort(jnp.unique(points, axis=0))
-
-    def compute_mappings(self, points: Array, inputs: Array, *args, **kwargs) -> Array:
-        """
-        See `GridBuilder.compute_mappings`.
-        """
-        return vmap(lambda task_inputs: compute_mapping(points, task_inputs))(inputs)
 
 
 def _unique_points(points: Array) -> Array:
@@ -113,7 +115,14 @@ class MultiOutputUnionGrid(eqx.Module):
 
     Not jit-compatible: relies on `jnp.unique`, whose output shape depends on `dataset`'s values,
     not just its shape.
+
+    Attributes
+    ----------
+    input_mapper
+        Maps each task's input points onto the grid points. Defaults to `ExactInputMapper`.
     """
+    input_mapper: InputMapper = ExactInputMapper()
+
     def __call__(self, dataset: Dataset, config: ModelConfig) -> Grid:
         """
         Build the full multi-output Grid from `dataset`, mapping every task's (and every output's)
@@ -134,9 +143,8 @@ class MultiOutputUnionGrid(eqx.Module):
         Returns
         -------
         Grid of points, output_ids and mappings of `dataset`'s inputs onto it. A padding point
-        (NaN on every input dimension) maps outside the whole grid (`len(points)` if
-        `isotopic_output_in_grid`, i.e. `O * G`; else the total point count across every output's
-        own block), regardless of which output-major block it would otherwise fall into.
+        (NaN on every input dimension) maps to `mimosa.mappings.PAD_INDEX`, i.e. outside the whole
+        grid rather than merely outside the output-major block it would otherwise fall into.
 
         Raises
         ------
@@ -164,8 +172,9 @@ class MultiOutputUnionGrid(eqx.Module):
         points = _unique_points(inputs.reshape(-1, inputs.shape[-1]))
         G = len(points)
 
-        base = vmap(lambda task_inputs: compute_mapping(points, task_inputs))(inputs)  # (#T, N or O*N)
+        base = self.input_mapper(points, inputs)  # (#T, N or O*N)
         is_pad = jnp.any(jnp.isnan(inputs), axis=-1)  # same shape as base
+        base = jnp.where(is_pad, 0, base)  # offsets below must not be added to PAD_INDEX
 
         if output_ids is None:
             # isotopic_output_in_tasks: the same N points are reused for every output, block-major.
@@ -176,7 +185,7 @@ class MultiOutputUnionGrid(eqx.Module):
         else:
             mappings = base + output_ids * G  # each row already carries its own output id
 
-        mappings = jnp.where(is_pad, n_outputs * G, mappings)  # outside the whole O*G object, not just its block
+        mappings = jnp.where(is_pad, PAD_INDEX, mappings)  # outside the whole O*G object, not just its block
         return Grid(points=points, output_ids=None, mappings=mappings)
 
     def _per_output_grid(self, inputs: Array, output_ids: Array, n_outputs: int, T: int) -> Grid:
@@ -192,12 +201,12 @@ class MultiOutputUnionGrid(eqx.Module):
         points = jnp.concatenate(block_points, axis=0)
         grid_output_ids = jnp.concatenate([jnp.full((len(p),), o) for o, p in enumerate(block_points)])
         starts = jnp.concatenate([jnp.zeros((1,), dtype=int), jnp.cumsum(jnp.array([len(p) for p in block_points]))[:-1]])
-        total = len(points)
 
-        mappings = jnp.full((T, inputs.shape[1]), total)
+        mappings = jnp.full((T, inputs.shape[1]), PAD_INDEX)
         for o, pts in enumerate(block_points):
-            local = vmap(lambda task_inputs: compute_mapping(pts, task_inputs))(inputs)  # (T, oN)
-            belongs = (output_ids == o) & ~is_pad_row
+            local = self.input_mapper(pts, inputs)  # (T, oN)
+            belongs = (output_ids == o) & ~is_pad_row & (local < len(pts))
+            local = jnp.where(belongs, local, 0)  # `starts[o]` below must not be added to PAD_INDEX
             mappings = jnp.where(belongs, local + starts[o], mappings)
 
         return Grid(points=points, output_ids=grid_output_ids, mappings=mappings)

@@ -14,7 +14,7 @@ from kernax.hp_sampling import sample_hps_from_uniform_priors
 
 from mimosa.data_structures import Dimensions, Parameters, ParameterPriors, ModelConfig, Hyperprior, Mixture, Dataset, \
 	Grid, MultivariateNormal, DataRemovalConfig
-from mimosa.linalg import compute_mapping
+from mimosa.linalg import find_exact_mappings
 from mimosa.sampling import sample_gp
 from mimosa import DEFAULT_JITTER
 
@@ -96,7 +96,10 @@ def sample_inputs(key: Array, grid: Grid, dims: Dimensions, config: ModelConfig)
 	mappings
 		Index of each sampled point in `grid`.
 	"""
-	output_mapping_offset = jnp.repeat(jnp.arange(dims.O), dims.N) * dims.G
+	# `generate_grid` rounds to a regular mesh, so a block holds `round(dims.G ** (1/dims.I)) ** dims.I`
+	# points, which is `dims.G` only when `dims.G` is an exact `dims.I`-th power.
+	G = len(grid.points) if config.isotopic_output_in_grid else len(grid.points) // dims.O
+	output_mapping_offset = jnp.repeat(jnp.arange(dims.O), dims.N) * G
 
 	if config.isotopic_output_in_grid:
 		if config.isotopic_output_in_tasks:
@@ -104,12 +107,12 @@ def sample_inputs(key: Array, grid: Grid, dims: Dimensions, config: ModelConfig)
 			if config.isotopic_tasks:
 				# Sample inputs once and broadcast to every task
 				inputs = jr.choice(key, grid.points, (dims.N,), replace=False)[None, ...]
-				mappings = compute_mapping(grid.points, inputs[0])[None, ...]
+				mappings = find_exact_mappings(grid.points, inputs[0])[None, ...]
 
 			else:
 				# Vmap on multiple PRNG keys to sample distinct inputs for every task
 				inputs = vmap(lambda k: jr.choice(k, grid.points, (dims.N,), replace=False))(jr.split(key, dims.T))
-				mappings = vmap(lambda i: compute_mapping(grid.points, i))(inputs)
+				mappings = vmap(lambda i: find_exact_mappings(grid.points, i))(inputs)
 
 			if dims.O > 1:
 				mappings = (jnp.tile(mappings, dims.O) + output_mapping_offset)
@@ -123,14 +126,14 @@ def sample_inputs(key: Array, grid: Grid, dims: Dimensions, config: ModelConfig)
 			if config.isotopic_tasks:
 				# Vmap on multiple PRNG keys to sample distinct inputs for each output, then broadcast to every task
 				inputs = vmap(lambda k: jr.choice(k, grid.points, (dims.N,), replace=False))(jr.split(key, dims.O))
-				mappings = vmap(lambda i: compute_mapping(grid.points, i))(inputs)
+				mappings = vmap(lambda i: find_exact_mappings(grid.points, i))(inputs)
 
 				inputs = inputs.reshape(dims.N * dims.O, dims.I)[None, ...]
 				mappings = (mappings.reshape(dims.N * dims.O) + output_mapping_offset)[None, ...]
 
 			else:
 				inputs = vmap(lambda k: jr.choice(k, grid.points, (dims.N,), replace=False))(jr.split(key, dims.T * dims.O))
-				mappings = vmap(lambda i: compute_mapping(grid.points, i))(inputs)
+				mappings = vmap(lambda i: find_exact_mappings(grid.points, i))(inputs)
 
 				inputs = inputs.reshape(dims.T, dims.N * dims.O, dims.I)
 				mappings = mappings.reshape(dims.T, dims.N * dims.O) + output_mapping_offset
@@ -145,13 +148,13 @@ def sample_inputs(key: Array, grid: Grid, dims: Dimensions, config: ModelConfig)
 			output_ids = jnp.repeat(jnp.arange(dims.O, dtype=int), dims.N)
 
 			if config.isotopic_tasks:
-				mappings = vmap(lambda k: jr.choice(k, jnp.arange(dims.G), (dims.N,), replace=False))(
+				mappings = vmap(lambda k: jr.choice(k, jnp.arange(G), (dims.N,), replace=False))(
 					jr.split(key, dims.O))
 				mappings = (mappings.reshape(dims.N * dims.O) + output_mapping_offset)[None, ...]  # Broadcast to every tasks
 				inputs = grid.points[mappings[0]][None, ...]  # Broadcast to every tasks
 
 			else:
-				mappings = vmap(lambda k: jr.choice(k, jnp.arange(dims.G), (dims.N,), replace=False))(
+				mappings = vmap(lambda k: jr.choice(k, jnp.arange(G), (dims.N,), replace=False))(
 					jr.split(key, dims.O * dims.T))
 				mappings = (mappings.reshape(dims.T, dims.N * dims.O) + output_mapping_offset).reshape(dims.T, dims.O * dims.N)
 				inputs = grid.points[mappings]

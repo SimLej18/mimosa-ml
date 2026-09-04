@@ -22,6 +22,9 @@ before upgrading.
   lowest free energy. 
 * `color_by_task` argument to `plot_dataset()`: color each task with its own color instead of by
   cluster assignment.
+* `mimosa.mappings`, with `InputMapper` and `ExactInputMapper`: grid builders now delegate
+  input-to-grid-point mapping to their `input_mapper` attribute.
+* `mimosa.PAD_INDEX`: the index an input point maps to when it is not on the grid.
 
 ### Fixed
 
@@ -30,6 +33,8 @@ before upgrading.
 * `BasicModel.fit` updated the responsibilities twice per iteration, the second time against a
   stale hyperposterior. Only the update following the hyperposterior remains, and the first-
   iteration skip moved onto it.
+* `mimosa.linalg.find_exact_mappings()` now has same contract in 1D and 2D, finding exact match
+  instead of insert index in 1D.
 
 ### Breaking changes
 
@@ -46,6 +51,9 @@ before upgrading.
   mixture update (negligible at convergence, but not bit-identical). Update unpacking:
   `_, mixture, params = model.fit(...)`.
 * `BasicModel.fit()` drops its `mixture_proportions` argument.
+* Unmapped input points map to `PAD_INDEX` instead of `len(points)`. Code comparing mappings
+  against a grid length, or doing arithmetic on them, must be updated.
+* `mimosa.linalg.compute_mapping()` is renamed `find_exact_mappings()`.
 
 ---
 

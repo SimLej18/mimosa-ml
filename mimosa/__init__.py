@@ -20,6 +20,7 @@ from mimosa.data_structures import (
 	Dataset, Dimensions, ModelConfig, DataRemovalConfig, Parameters, ParameterPriors,
 	Grid, Mixture, Hyperprior, Hyperposterior, MultivariateNormal,
 )
+from mimosa.hyperpost import one_shot_hyperpost
 from mimosa.grid import UnionGrid, RegularGrid, KMeansGrid, MultiOutputUnionGrid, MergedGrid
 from mimosa.mappings import ExactInputMapper, NearestInputMapper
 from mimosa.io import save_csv, load_csv
@@ -75,6 +76,7 @@ __all__ = [
 	# models and prediction
 	"BasicModel",
 	"KMeansMixtureInitialiser",
+	"one_shot_hyperpost",
 	"FunctionPredictor",
 	"ObservationPredictor",
 	# plotting

@@ -4,6 +4,8 @@ points, given a Dataset, a soft-clustering Mixture, and model Parameters.
 
 `single_channel_hyperpost` computes it for one mean-process and one channel dimension;
 `single_cluster_hyperpost` vmaps it across channel dimensions; `hyperpost` vmaps it across mean-processes.
+
+`one_shot_hyperpost` is a shortcut for the case where one task per cluster is known to represent it.
 """
 
 import jax.numpy as jnp
@@ -14,7 +16,7 @@ from mimosa.linalg import cho_factor, cho_solve
 from mimosa.data_structures import Parameters, Dataset, Grid, Mixture, Hyperprior, Hyperposterior
 from mimosa.constants import DEFAULT_JITTER
 
-__all__ = ["single_channel_hyperpost", "single_cluster_hyperpost", "hyperpost", "Hyperpost"]
+__all__ = ["single_channel_hyperpost", "single_cluster_hyperpost", "hyperpost", "one_shot_hyperpost", "Hyperpost"]
 
 
 def single_channel_hyperpost(outputs: Array, grid: Grid, responsibilities: Array,
@@ -194,6 +196,60 @@ def hyperpost(dataset: Dataset, grid: Grid, mixture: Mixture, parameters: Parame
 		else:
 			f = vmap(single_cluster_hyperpost, in_axes=(None, None, 0, 0, 0, None))
 			return f(dataset.outputs, grid, mixture.responsibilities.T, hyperprior, task_covs.swapaxes(0, 1), jitter)
+
+
+def one_shot_hyperpost(dataset: Dataset, grid: Grid, parameters: Parameters, cluster_task_ids: Array,
+                       jitter: Array = DEFAULT_JITTER) -> Hyperposterior:
+	"""
+	Hyperposterior in which each mean-process is conditioned on a single task, chosen by the caller
+	as representative of that cluster.
+
+	Every other task carries zero responsibility, hence zero precision: mean-process `k` is the
+	cluster prior updated by task `cluster_tasks[k]`'s observations alone, and stays at the prior
+	away from them. Meant to warm-start `mimosa.models.BasicModel.fit` through its
+	`init_hyperposterior` argument, when the caller already knows a task representing each cluster.
+
+	Parameters
+	----------
+	dataset
+		Dataset the representative tasks are taken from.
+	grid
+		Grid of points and mappings of `dataset`'s inputs onto it.
+	parameters
+		Model parameters (mean, kernels) used to compute the priors and task covariances.
+	cluster_task_ids
+		Index in `dataset` of the task representing each mean-process. Shape `(K,)`, where `K` must
+		match the number of mean-processes the model is fitted with.
+	jitter
+		Diagonal jitter added before Cholesky factorizations, for numerical stability.
+
+	Returns
+	-------
+	Hyperposterior over every mean-process's values at the grid points, batched over mean-processes
+	(and channel dimensions).
+
+	Examples
+	--------
+	>>> import jax.random as jr
+	>>> from kernax import ZeroMean, VarianceKernel, SEKernel, WhiteNoiseKernel
+	>>> from mimosa.data_structures import Dimensions, Parameters, ModelConfig
+	>>> from mimosa.synthetic import generate_data
+	>>> dims = Dimensions(T=6, K=2, I=1, C=1, O=1, N=5, G=5)
+	>>> parameters = Parameters(
+	...     cluster_mean=ZeroMean(),
+	...     cluster_kernel=VarianceKernel(1.0) * SEKernel(length_scale=1.0),
+	...     task_kernel=VarianceKernel(0.5) * SEKernel(length_scale=1.0),
+	...     noise_kernel=WhiteNoiseKernel(noise=0.1),
+	... )
+	>>> dataset, grid, _, _, sampled_params, *_ = generate_data(jr.PRNGKey(0), dims, parameters, ModelConfig())
+	>>> hyperposterior = one_shot_hyperpost(dataset, grid, sampled_params, jnp.array([0, 3]))
+	>>> hyperposterior.mean.shape
+	(2, 1, 5)
+	"""
+	cluster_task_ids = jnp.asarray(cluster_task_ids)
+	responsibilities = jnp.zeros((len(dataset.outputs), len(cluster_task_ids)))
+	mixture = Mixture(responsibilities=responsibilities.at[cluster_task_ids, jnp.arange(len(cluster_task_ids))].set(1.))
+	return hyperpost(dataset, grid, mixture, parameters, jitter)
 
 
 class Hyperpost(eqx.Module):

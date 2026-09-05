@@ -13,6 +13,9 @@ before upgrading.
 
 ### Added
 
+* `one_shot_hyperpost()`: hyperposterior conditioning each mean-process on a single task the caller
+  names as representative of that cluster. Pass it to `BasicModel.fit()` as `init_hyperposterior` to
+  warm-start the fit from known cluster representatives.
 * `mimosa.grid.RegularGrid`: evenly-spaced grid spanning explicit `bounds`, one `(min, max)` per
   input dimension. 
 * `mimosa.grid.MergedGrid`: `MergedGrid(*grids)` pools several grids' points into one and records,

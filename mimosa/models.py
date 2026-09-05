@@ -126,15 +126,12 @@ class BasicModel(AbstractModel):
         """
         Fit the model's cluster/task hyperparameters and mixture responsibilities to a Dataset.
 
-        Initialises the mixture and hyperposterior (a preliminary E-step), then alternates, for
-        `n_iter` iterations:
+        Initialises the mixture and hyperposterior, then alternates, for `n_iter` iterations:
         1) optimising the parameters (M-step)
         2) computing the hyperposterior (E-step)
         3) updating the mixture (E-step)
 
-        Starting on the M-step is what replaces the old first-iteration mixture-update skip: the
-        pre-loop initialisation already plays that role, and the returned hyperposterior and mixture
-        are consistent with the returned parameters.
+        It starts on the M-step as the pre-loop initialisation already acts like a first E-step.
 
         Parameters
         ----------

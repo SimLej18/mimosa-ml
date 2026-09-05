@@ -18,7 +18,7 @@ from jax import Array, vmap
 import equinox as eqx
 
 from mimosa import PAD_INDEX
-from mimosa.linalg import find_exact_mappings
+from mimosa.linalg import find_exact_mappings, find_nearest_mappings
 
 
 class InputMapper(eqx.Module):
@@ -61,3 +61,31 @@ class ExactInputMapper(InputMapper):
         See `InputMapper.__call__`.
         """
         return vmap(lambda task_inputs: find_exact_mappings(points, task_inputs))(inputs)
+
+
+class NearestInputMapper(InputMapper):
+    """
+    Map every input point to the grid point nearest to it, in Euclidean distance.
+
+    Unlike `ExactInputMapper`, fits a grid whose points do not coincide with the tasks' own input
+    points, such as one built by `mimosa.grid.RegularGrid` or `mimosa.grid.KMeansGrid`: no point is
+    dropped, at the cost of representing it by a merely nearby grid point.
+    `mimosa.linalg.mapping_distances` measures that approximation error.
+
+    jit- and vmap-compatible.
+
+    Attributes
+    ----------
+    chunk_size
+        Input points handled per distance-computation step, each holding a `(chunk_size, G)`
+        distance matrix. Defaults to every input point at once; lower it if that does not fit in
+        memory.
+    """
+    chunk_size: None | int = eqx.field(static=True, default=None)
+
+    def __call__(self, points: Array, inputs: Array, *args, **kwargs) -> Array:
+        """
+        See `InputMapper.__call__`.
+        """
+        mappings = find_nearest_mappings(points, inputs.reshape(-1, inputs.shape[-1]), self.chunk_size)
+        return mappings.reshape(inputs.shape[:-1])

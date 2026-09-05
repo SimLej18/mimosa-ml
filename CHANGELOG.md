@@ -35,6 +35,20 @@ before upgrading.
   cluster assignment.
 * `mimosa.mappings`, with `InputMapper` and `ExactInputMapper`: grid builders now delegate
   input-to-grid-point mapping to their `input_mapper` attribute.
+* `mimosa.mappings.NearestInputMapper`: maps each input point to the *nearest* grid point rather
+  than requiring exact equality, making a fixed-size grid such as `RegularGrid` fittable.
+* `mimosa.grid.KMeansGrid`: grid of `n_points` k-means centers over the tasks' input points, mapped
+  through `NearestInputMapper`. Caps the grid size where `UnionGrid` grows with the number of
+  distinct inputs, which continuous or multi-dimensional inputs push past what is tractable.
+* `mimosa.kmeans.minibatch_kmeans`: k-means in `O(batch_size * k)` memory, independent of the number
+  of points, where `soft_kmeans` materialises the full `(N, k)` responsibilities. Uses
+  `mimosa.kmeans.default_stiffness`, a `k`-aware stiffness, since a fixed one collapses the centers
+  as `k` grows.
+* `mimosa.linalg.mapping_distances`: distance from each input point to the grid point its mapping
+  selects, i.e. the error an approximate mapping introduces.
+* `mimosa.linalg.find_nearest_mappings` and `sq_dists`: chunked nearest-grid-point search, the
+  approximate counterpart of `find_exact_mappings`, and the pairwise squared-distance helper it
+  shares with `mimosa.kmeans`.
 * `mimosa.PAD_INDEX`: the index an input point maps to when it is not on the grid.
 * `mimosa.prediction.ObservationPredictor`, predicting the observations
   $y_t = f_t(x_t) + \varepsilon$ rather than the latent function $f_t(x_t)$, i.e. adding observation

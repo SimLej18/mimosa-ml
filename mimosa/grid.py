@@ -2,6 +2,7 @@
 Build grids of input points from task inputs, and map each task's inputs onto the grid.
 """
 from abc import abstractmethod
+from dataclasses import replace
 from itertools import accumulate
 
 import jax.numpy as jnp
@@ -10,7 +11,8 @@ import equinox as eqx
 
 from mimosa import PAD_INDEX
 from mimosa.linalg import lexicographic_sort
-from mimosa.mappings import InputMapper, ExactInputMapper
+from mimosa.kmeans import minibatch_kmeans
+from mimosa.mappings import InputMapper, ExactInputMapper, NearestInputMapper
 from mimosa.data_structures import Grid, Dataset, ModelConfig
 
 
@@ -126,6 +128,77 @@ class RegularGrid(GridBuilder):
         # meshgrid(indexing="ij") varies the last axis fastest, so the rows come out lexicographically
         # sorted, as `ExactInputMapper` requires of grid points.
         return jnp.stack(jnp.meshgrid(*axes, indexing="ij"), axis=-1).reshape(-1, len(self.bounds))
+
+
+class KMeansGrid(GridBuilder):
+    """
+    Grid of `n_points` k-means centers over the tasks' pooled input points.
+
+    Where `UnionGrid` sizes the grid at the number of distinct input points -- which continuous
+    inputs, or several input dimensions, push past what a dense `(O*G, O*G)` covariance can hold --
+    this fixes the budget at `n_points` and spends it minimising the distance from each input point
+    to the grid point standing for it. Its points do not coincide with the tasks' own, so it is
+    fitted through `NearestInputMapper` rather than `ExactInputMapper`.
+
+    Not jit-compatible: `minibatch_kmeans` runs on the non-NaN input points, whose count depends on
+    `inputs`' values rather than on its shape.
+
+    Attributes
+    ----------
+    prng_key
+        `jax.random` PRNG key, forwarded to `minibatch_kmeans`.
+    n_points
+        Number of centers, i.e. the grid budget.
+    batch_size
+        Input points drawn per `minibatch_kmeans` step and, unless `input_mapper` carries its own
+        `chunk_size`, mapped per step afterwards. Each step holds a `(batch_size, n_points)`
+        distance matrix. Defaults to `n_points`; lower it if that does not fit in memory, at some
+        cost in center quality, and raise it to spend memory on better centers.
+
+    Examples
+    --------
+    >>> grid = KMeansGrid(prng_key=key, n_points=256)(dataset.inputs)
+    >>> distances = mapping_distances(grid.points, dataset.inputs, grid.mappings)  # what it cost
+    """
+    prng_key: Array = eqx.field(kw_only=True)
+    input_mapper: InputMapper = NearestInputMapper()
+    n_points: int = eqx.field(static=True, kw_only=True)
+    batch_size: None | int = eqx.field(static=True, default=None)
+
+    @property
+    def _resolved_batch_size(self) -> int:
+        """
+        `batch_size`, or the whole grid budget when it is left unset.
+        """
+        return self.n_points if self.batch_size is None else self.batch_size
+
+    def compute_points(self, inputs: Array, *args, **kwargs) -> Array:
+        """
+        See `GridBuilder.compute_points`. Centers are sorted lexicographically, like every other
+        builder's points.
+
+        Raises
+        ------
+        ValueError
+            If there are fewer non-NaN input points than centers to place on them.
+        """
+        points = inputs.reshape(-1, inputs.shape[-1])
+        points = points[~jnp.any(jnp.isnan(points), axis=-1)]
+        if self.n_points > len(points):
+            raise ValueError(f"Cannot place {self.n_points} centers on {len(points)} input points.")
+
+        centers = minibatch_kmeans(self.prng_key, points, self.n_points, self._resolved_batch_size)
+        return lexicographic_sort(centers)
+
+    def compute_mappings(self, points: Array, inputs: Array, *args, **kwargs) -> Array:
+        """
+        See `GridBuilder.compute_mappings`. A `NearestInputMapper` left to size its own chunks
+        inherits `batch_size`, so one setting bounds the memory of both passes over the inputs.
+        """
+        mapper = self.input_mapper
+        if isinstance(mapper, NearestInputMapper) and mapper.chunk_size is None:
+            mapper = replace(mapper, chunk_size=self._resolved_batch_size)
+        return mapper(points, inputs, *args, **kwargs)
 
 
 def _unique_points(points: Array, return_inverse: bool = False) -> Array | tuple[Array, Array]:

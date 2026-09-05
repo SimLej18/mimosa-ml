@@ -1,6 +1,6 @@
 """
 Linear algebra and grid-indexing primitives used throughout the package: batched Cholesky solves,
-and lexicographic search over grid points.
+and lexicographic (exact) or nearest-point (approximate) search over grid points.
 """
 
 import numpy as np
@@ -152,3 +152,80 @@ def find_exact_mappings(grid: Array, points: Array) -> Array:
 		return jnp.where(grid[jnp.minimum(idx, len(grid) - 1)] == points, idx, PAD_INDEX)
 	# Multiple input dimensions requires our custom lexicographic search
 	return searchsorted_2d_vectorised(points, grid)
+
+
+def sq_dists(points: Array, centers: Array) -> Array:
+	"""
+	Pairwise squared Euclidean distances between `points` and `centers`.
+
+	Parameters
+	----------
+	points
+		Points, of shape `(N, I)`.
+	centers
+		Centers, of shape `(FG, I)`.
+
+	Returns
+	-------
+	Squared distances, of shape `(N, FG)`.
+	"""
+	return jnp.sum((points[:, None, :] - centers[None, :, :]) ** 2, axis=-1)
+
+
+def find_nearest_mappings(grid: Array, points: Array, chunk_size: None | int = None) -> Array:
+	"""
+	Find the indices in `grid` of the grid points nearest to `points`, in Euclidean distance.
+
+	Approximate counterpart of `find_exact_mappings`: every non-NaN point gets a grid point, however
+	far it is. `grid` need not be sorted, ties go to the lowest index.
+
+	Chunked over `points`, so at most `(chunk_size, FG)` distances exist at once and peak memory is
+	set by `chunk_size` rather than by `FN`.
+
+	Parameters
+	----------
+	grid
+		Grid points, of shape `(FG, I)`.
+	points
+		Points to search for, of shape `(FN, I)`.
+	chunk_size
+		Rows of `points` handled per `jax.lax.map` step, each holding a `(chunk_size, FG)` distance
+		matrix. Defaults to all of `points` at once; lower it if that does not fit in memory. Must be
+		a static Python int, never a traced value.
+
+	Returns
+	-------
+	Index in `grid` of the point nearest each of `points`, or `PAD_INDEX` for a NaN point.
+	"""
+	chunk_size = max(len(points), 1) if chunk_size is None else chunk_size
+	n_chunks = -(-len(points) // chunk_size)  # ceil division
+	padded = jnp.pad(points, ((0, n_chunks * chunk_size - len(points)), (0, 0)))
+	chunks = padded.reshape(n_chunks, chunk_size, points.shape[-1])
+	nearest = jlx.map(lambda chunk: jnp.argmin(sq_dists(chunk, grid), axis=-1), chunks)
+	# `argmin` is per row, so a NaN point only corrupts its own index: overwriting it here is enough.
+	return jnp.where(jnp.any(jnp.isnan(points), axis=-1), PAD_INDEX, nearest.reshape(-1)[:len(points)])
+
+
+def mapping_distances(grid: Array, points: Array, mappings: Array) -> Array:
+	"""
+	Euclidean distance from each of `points` to the grid point its mapping selects, i.e. the error
+	an approximate mapping such as `mimosa.mappings.NearestInputMapper` introduces.
+
+	Parameters
+	----------
+	grid
+		Grid points, of shape `(FG, I)`.
+	points
+		Points measured against `grid`, of shape `(..., I)`.
+	mappings
+		Index of each of `points` in `grid`, of shape `(...)`, as returned by an
+		`mimosa.mappings.InputMapper`.
+
+	Returns
+	-------
+	Distances, of shape `(...)`, NaN where `mappings` is `PAD_INDEX` and there is thus no grid point
+	to measure against.
+	"""
+	# PAD_INDEX is out of bounds, so the gather clamps it onto the NaN sentinel appended here.
+	grid = jnp.concatenate([grid, jnp.full((1, grid.shape[-1]), jnp.nan, grid.dtype)])
+	return jnp.sqrt(jnp.sum((points - grid[mappings]) ** 2, axis=-1))

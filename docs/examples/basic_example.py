@@ -40,7 +40,7 @@ from mimosa import (
 	Dimensions, ModelConfig, DataRemovalConfig, Parameters,
 	BasicModel, generate_data, RandomDataRemover, save_csv, load_csv, build_parameters,
 )
-from mimosa.grid import UnionGrid
+from mimosa.grid import UnionGrid, RegularGrid, MergedGrid
 from mimosa.plot import plot_dataset, plot_clusters, plot_single_task_prediction
 from mimosa.sampling import sample_gp
 
@@ -189,4 +189,37 @@ fig, ax = plot_single_task_prediction(
 	dataset, fitted_grid, dims, hyperposterior, fitted_mixture, t_id, c_id, samples=samples, figsize=(8 * dims.C, 6)
 )
 fig.suptitle(f"Prediction samples — task {t_id}, channel {c_id}")
+plt.show()
+
+# %% [markdown]
+"""
+## Predicting on another grid
+
+`fitted_grid` is the union of the observed locations, which is what fitting needs. To predict 
+somewhere else, merge that grid with the one you actually want, and run the prediction once on the merged pool.
+
+`MergedGrid` keeps the mappings of its first argument, so the merged grid still sees every
+observation, and records in `sources[i]` where argument `i`'s points landed. That is exactly the
+selector `marginal` takes, so the part of the prediction living on the regular grid is one call away.
+"""
+
+# %% 11. Merge an evenly-spaced grid into the fitted one
+# `bounds` is one (min, max) per input dimension -- here the range the data was generated over.
+regular_grid = RegularGrid(bounds=((-2.5, 2.5),), n_points=300)(dataset.inputs)
+merged_grid = MergedGrid(fitted_grid, regular_grid)
+
+# %% 12. Predict on the merged grid, then marginalise onto the regular one
+# `model.predict` would do both steps at once, but the hyperposterior is wanted for the plot below.
+merged_hyperposterior = model.hyperpost(dataset, merged_grid, fitted_mixture, fitted_params)
+merged_predictions = model.predictor(dataset, merged_grid, merged_hyperposterior, fitted_params)
+
+regular_hyperposterior = merged_hyperposterior.marginal(merged_grid.sources[1])
+regular_prediction = merged_predictions.marginal(merged_grid.sources[1])[t_id, k_id, c_id]
+
+# %% 13. Plot the same task, now on the regular grid
+fig, ax = plot_single_task_prediction(
+	dataset, regular_grid, dims, regular_hyperposterior, fitted_mixture, t_id, c_id,
+	prediction=regular_prediction, figsize=(8 * dims.C, 6)
+)
+fig.suptitle(f"Prediction on a regular grid — task {t_id}, channel {c_id}")
 plt.show()

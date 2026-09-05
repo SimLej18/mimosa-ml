@@ -151,7 +151,7 @@ init_params = build_parameters(init_params, dims, model_config)
 # here by the caller, outside of fit/predict, rather than owned by the model — see
 # mimosa.grid.GridBuilder. MultiOutputUnionGrid is UnionGrid's multi-output counterpart: it needs
 # model_config too, to know whether outputs share grid/task input locations.
-fitted_grid = MultiOutputUnionGrid()(dataset, model_config)
+fitted_grid = MultiOutputUnionGrid(n_outputs=dims.O)(dataset, model_config)
 
 hyperposterior, fitted_mixture, fitted_params = model.fit(dataset, fitted_grid, init_params, n_iter=50)
 

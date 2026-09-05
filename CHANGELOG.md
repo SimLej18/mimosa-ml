@@ -13,6 +13,14 @@ before upgrading.
 
 ### Added
 
+* `mimosa.grid.RegularGrid`: evenly-spaced grid spanning explicit `bounds`, one `(min, max)` per
+  input dimension. 
+* `mimosa.grid.MergedGrid`: `MergedGrid(*grids)` pools several grids' points into one and records,
+  in `sources[i]`, where grid `i` landed in it. Useful with `marginal(merged.sources[i])` to retrieve
+  results of a specific grid.
+* `Grid.n_outputs`: the number of outputs a grid spans, defaulting to `1`. A single-output grid is
+  just a grid with `n_outputs=1`.
+* `mimosa.grid.MultiOutputGridBuilder`: base class for multi-output grid builders like `MultiOutputUnionGrid`.
 * `MultivariateNormal.marginal()` and `MultivariateNormal.cross_covariance()`: index `mean` and
   `covariance` jointly along the points axis. Used wherever a hyperposterior is restricted to a task's 
   observed points via `Grid.mappings`, or to one output's block of the grid.
@@ -48,6 +56,8 @@ before upgrading.
 
 ### Breaking changes
 
+* `MultiOutputUnionGrid` takes `n_outputs` at construction instead of inferring it from the
+  `Dataset`: `MultiOutputUnionGrid(n_outputs=dims.O)(dataset, config)`.
 * `n_restarts` defaults to `8`, so clustering — and hence any fit that starts from it — changes
   for a given PRNG key, even at `n_restarts=1`. Expect better optima, not identical results.
 * `Mixture.proportions` is a read-only property derived from `responsibilities`, no longer a field:

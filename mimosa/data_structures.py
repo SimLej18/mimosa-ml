@@ -245,10 +245,15 @@ class Grid(eqx.Module):
 		IDs of the output of each grid point. None if isotopic outputs. Else, shape `(O*G,)`. Defaults to `None`.
 	mappings
 		Index of each task's input points in `points`. Defaults to `None`.
+	n_outputs
+		Number of correlated outputs the grid spans. When `output_ids` is None they share `points`,
+		so a distribution over the grid is `n_outputs * len(points)` long; otherwise `points`
+		already holds one block per output. Defaults to `1`, a single-output grid.
 	"""
 	points: Float[Array, "FG I"]
 	output_ids: None | Int[Array, "FG"] = None
 	mappings:  None | Int[Array, "#T N"] = None
+	n_outputs: int = eqx.field(static=True, default=1)
 
 
 @jaxtyped(typechecker=typechecker)

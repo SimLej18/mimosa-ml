@@ -153,7 +153,7 @@ def predict_clusters(task_outputs: Array,
 	)(task_outputs, post_mean_blocks, cov_blocks, jitter)
 
 
-def _cross_grid(grid: Grid, output_ids: None | Array, hyperposterior: Hyperposterior) -> tuple[Array, None | Array]:
+def _cross_grid(grid: Grid, output_ids: None | Array) -> tuple[Array, None | Array]:
 	"""
 	Grid points/output_ids to cross-covary against points labelled by `output_ids`.
 
@@ -169,10 +169,6 @@ def _cross_grid(grid: Grid, output_ids: None | Array, hyperposterior: Hyperposte
 		Grid whose points are being cross-covaried against `output_ids`-labelled points.
 	output_ids
 		Output ids of the points `grid` is being cross-covaried against (e.g. `dataset.output_ids`).
-	hyperposterior
-		Posterior distribution over every mean-process's values at the grid points, used to read off
-		the number of outputs from its shape (`hyperposterior.mean.shape[-1] // len(grid.points)`)
-		rather than `output_ids.max()`, which -- unlike a shape -- isn't known under `jit`.
 
 	Returns
 	-------
@@ -181,9 +177,8 @@ def _cross_grid(grid: Grid, output_ids: None | Array, hyperposterior: Hyperposte
 	"""
 	if output_ids is None or grid.output_ids is not None:
 		return grid.points, grid.output_ids
-	n_outputs = hyperposterior.mean.shape[-1] // len(grid.points)
-	points = jnp.tile(grid.points, (n_outputs, 1))
-	ids = jnp.repeat(jnp.arange(n_outputs), len(grid.points))
+	points = jnp.tile(grid.points, (grid.n_outputs, 1))
+	ids = jnp.repeat(jnp.arange(grid.n_outputs), len(grid.points))
 	return points, ids
 
 
@@ -229,7 +224,7 @@ def predict(dataset: Dataset,
 	if grid.mappings is None:
 		raise ValueError("`grid.mappings` is `None`. Mappings must be computed to make a prediction.")
 
-	cross_points, cross_ids = _cross_grid(grid, dataset.output_ids, hyperposterior)
+	cross_points, cross_ids = _cross_grid(grid, dataset.output_ids)
 
 	if dataset.inputs.shape[0] == 1:
 		extended_grid = grid.points

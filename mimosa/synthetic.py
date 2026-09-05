@@ -4,6 +4,7 @@ data points at random to simulate missingness (`RandomDataRemover`).
 """
 
 from abc import abstractmethod
+import dataclasses
 import jax.random as jr
 import jax.numpy as jnp
 from jax import vmap, Array
@@ -14,6 +15,7 @@ from kernax.hp_sampling import sample_hps_from_uniform_priors
 
 from mimosa.data_structures import Dimensions, Parameters, ParameterPriors, ModelConfig, Hyperprior, Mixture, Dataset, \
 	Grid, MultivariateNormal, DataRemovalConfig
+from mimosa.grid import RegularGrid
 from mimosa.linalg import find_exact_mappings
 from mimosa.sampling import sample_gp
 from mimosa import DEFAULT_JITTER
@@ -43,28 +45,13 @@ def generate_grid(dims: Dimensions, config: ModelConfig, bounds: list[tuple[floa
 		raise ValueError(f"Cannot build heterotopic grid for {dims.O} outputs with only {len(bounds)} bounds.")
 
 	grid_size = max(round(dims.G ** (1 / dims.I)), 1)
+	# Each output's bounds span every input dimension, so one `RegularGrid` per output block.
+	blocks = [RegularGrid(bounds=(b,) * dims.I, n_points=grid_size).compute_points() for b in bounds]
+	points = jnp.concat(blocks, axis=0)
 
-	def output_grid(output_bounds: tuple[float, float]) -> Array:
-		axis = jnp.linspace(output_bounds[0], output_bounds[1], grid_size)
-		grids = jnp.meshgrid(*([axis] * dims.I), indexing='ij')
-		return jnp.stack(grids, axis=-1).reshape(-1, dims.I)
-
-	full_grid = jnp.concat([output_grid(b) for b in bounds], axis=0)
-
-	if config.isotopic_output_in_grid:
-		return Grid(
-			points = full_grid,
-			mappings = None,
-			output_ids = None
-		)
-
-	output_ids = jnp.repeat(jnp.arange(len(bounds)), grid_size**dims.I)
-
-	return Grid(
-		points = full_grid,
-		mappings = None,
-		output_ids = output_ids
-	)
+	output_ids = None if config.isotopic_output_in_grid \
+		else jnp.repeat(jnp.arange(dims.O), grid_size ** dims.I)
+	return Grid(points=points, mappings=None, output_ids=output_ids, n_outputs=dims.O)
 
 
 def sample_inputs(key: Array, grid: Grid, dims: Dimensions, config: ModelConfig) -> tuple[Array, None | Array, Array]:
@@ -560,7 +547,7 @@ def generate_data(
 		dataset_output_ids = None
 
 	dataset = Dataset(inputs=inputs, outputs=outputs, output_ids=dataset_output_ids)
-	grid = Grid(points=grid.points, mappings=mappings, output_ids=grid.output_ids)
+	grid = dataclasses.replace(grid, mappings=mappings)
 
 	return dataset, grid, hyperprior, mixture, parameters, cluster_means, tasks
 

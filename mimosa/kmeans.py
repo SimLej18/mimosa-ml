@@ -17,6 +17,8 @@ import jax.numpy as jnp
 
 from mimosa.linalg import sq_dists
 
+__all__ = ["kmeanspp_init", "soft_kmeans", "default_stiffness", "minibatch_kmeans"]
+
 
 def kmeanspp_init(key: Array, X: Array, k: int) -> Array:
     """

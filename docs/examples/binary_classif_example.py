@@ -40,14 +40,11 @@ import matplotlib.pyplot as plt
 from kernax import ZeroMean, VarianceKernel, SEKernel, WhiteNoiseKernel
 
 from mimosa import (
-	Dimensions, ModelConfig, Parameters, Dataset,
-	BasicModel, generate_data, build_parameters,
+	Dataset, Dimensions, ModelConfig, Parameters,
+	BasicModel, UnionGrid, BinomialLaplaceApproximator,
+	generate_data, build_parameters, known_noise_kernel, sample_gp,
+	plot_dataset, plot_clusters,
 )
-from mimosa.laplace import BinomialLaplaceApproximator
-from mimosa.synthetic import known_noise_kernel
-from mimosa.grid import UnionGrid
-from mimosa.plot import plot_dataset, plot_clusters
-from mimosa.sampling import sample_gp
 
 key = jr.PRNGKey(42)
 plt.rcParams['figure.dpi'] = 300

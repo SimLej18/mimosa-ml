@@ -12,7 +12,9 @@ import equinox as eqx
 
 from mimosa.linalg import cho_factor, cho_solve
 from mimosa.data_structures import Parameters, Dataset, Grid, Mixture, Hyperprior, Hyperposterior
-from mimosa import DEFAULT_JITTER
+from mimosa.constants import DEFAULT_JITTER
+
+__all__ = ["single_channel_hyperpost", "single_cluster_hyperpost", "hyperpost", "Hyperpost"]
 
 
 def single_channel_hyperpost(outputs: Array, grid: Grid, responsibilities: Array,

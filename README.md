@@ -35,10 +35,18 @@ You can install mimosa through pip:
 pip install mimosa-ml
 ```
 
-You can then import components of the package as:
+The supported API is re-exported flat from the package root:
 
 ```python
-from mimosa.hyperpost import Hyperpost  # Import example
+from mimosa import Dataset, UnionGrid, BasicModel, plot_dataset
+```
+
+Extension points -- abstract bases, free numerical functions -- live in their submodule and are
+imported from it:
+
+```python
+from mimosa.hyperpost import Hyperpost
+from mimosa.linalg import cho_factor
 ```
 
 N.b.: notice the difference between `mimosa-ml` (the PyPI ID of the package) and `mimosa` (the internal package name).
@@ -77,12 +85,11 @@ import jax.random as jr
 from jax import vmap
 from kernax import ZeroMean, VarianceKernel, SEKernel, WhiteNoiseKernel
 
-from mimosa.data_structures import Dimensions, Parameters, ModelConfig
-from mimosa.synthetic import generate_data
-from mimosa.models import BasicModel
-from mimosa.grid import UnionGrid
-from mimosa.plot import plot_dataset, plot_clusters, plot_single_task_prediction
-from mimosa.sampling import sample_gp
+from mimosa import (
+    Dimensions, ModelConfig, Parameters,
+    BasicModel, UnionGrid, generate_data, sample_gp,
+    plot_dataset, plot_clusters, plot_single_task_prediction,
+)
 
 key = jr.PRNGKey(0)
 
@@ -138,7 +145,7 @@ Binary, count or duration data can be Laplace-matched into Gaussian pseudo-obser
 fitting, so the rest of the pipeline is unchanged:
 
 ```python
-from mimosa.laplace import BinomialLaplaceApproximator
+from mimosa import BinomialLaplaceApproximator
 
 approximator = BinomialLaplaceApproximator(interval=0.1)
 wrapped = approximator.wrap(dataset)      # Gaussian means + per-point known noise

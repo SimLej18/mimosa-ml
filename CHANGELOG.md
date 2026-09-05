@@ -92,6 +92,8 @@ before upgrading.
   Use `FunctionPredictor()` for the previous behaviour.
 * `mimosa.prediction.predict()` takes `noisy` before `jitter`, so callers passing `jitter`
   positionally now bind it to `noisy`. Pass it by keyword.
+* Imports may have moved: the supported API is now re-exported flat from `mimosa` (see its
+  `__all__`), while extension points stay in their submodule.
 
 ---
 

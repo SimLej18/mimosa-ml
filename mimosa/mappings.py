@@ -17,8 +17,10 @@ from abc import abstractmethod
 from jax import Array, vmap
 import equinox as eqx
 
-from mimosa import PAD_INDEX
+from mimosa.constants import PAD_INDEX
 from mimosa.linalg import find_exact_mappings, find_nearest_mappings
+
+__all__ = ["InputMapper", "ExactInputMapper", "NearestInputMapper"]
 
 
 class InputMapper(eqx.Module):

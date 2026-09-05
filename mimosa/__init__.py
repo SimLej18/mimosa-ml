@@ -1,32 +1,49 @@
 """
 mimosa-ml: multi-task, multi-cluster Gaussian process regression with heterogeneous sampling.
+
+Import layout
+-------------
+This module is a pure façade: it holds no definitions, only re-exports, so no submodule ever needs
+to import from `mimosa` itself. Submodules import from each other (and from `mimosa.constants`),
+never from the package root.
+
+`__all__` below is the supported flat API -- everything needed to build, fit, predict, plot,
+save/load and simulate. Names used only to *extend* the library (abstract bases, free numerical
+functions, internal block containers) stay in their submodule and are reached through it, e.g.
+`mimosa.linalg.cho_factor`, `mimosa.prediction.predict`, `mimosa.grid.GridBuilder`. Each submodule
+declares its own `__all__`; anything absent from it is private.
 """
 import importlib.metadata
-import jax.numpy as jnp
 
-DEFAULT_JITTER = jnp.asarray(1e-8)
-
-# Index standing for "this input point is not on the grid". Out of bounds for any grid, so a scatter
-# drops it and a gather clamps it. Weakly typed, so it adopts the dtype of the mappings it is
-# written into. See `mimosa.mappings` for the full contract.
-PAD_INDEX: int = int(jnp.iinfo(jnp.int32).max)
-
+from mimosa.constants import DEFAULT_JITTER, PAD_INDEX
 from mimosa.data_structures import (
 	Dataset, Dimensions, ModelConfig, DataRemovalConfig, Parameters, ParameterPriors,
 	Grid, Mixture, Hyperprior, Hyperposterior, MultivariateNormal,
 )
+from mimosa.grid import UnionGrid, RegularGrid, KMeansGrid, MultiOutputUnionGrid, MergedGrid
+from mimosa.mappings import ExactInputMapper, NearestInputMapper
 from mimosa.io import save_csv, load_csv
-from mimosa import laplace
-from mimosa.models import BasicModel
+from mimosa.laplace import (
+	IdentityLaplaceApproximator, BinomialLaplaceApproximator, GammaLaplaceApproximator,
+	PoissonLaplaceApproximator, ExponentialLaplaceApproximator,
+)
 from mimosa.mixture import KMeansMixtureInitialiser
-from mimosa.synthetic import generate_data, RandomDataRemover, build_parameters, sample_parameters_from_priors
+from mimosa.models import BasicModel
+from mimosa.plot import (
+	plot_channel, plot_task, plot_dataset, plot_single_cluster_single_channel, plot_single_cluster,
+	plot_clusters, plot_single_task_prediction,
+)
+from mimosa.prediction import FunctionPredictor, ObservationPredictor
+from mimosa.sampling import sample_gp
+from mimosa.synthetic import (
+	generate_data, known_noise_kernel, build_parameters, sample_parameters_from_priors, RandomDataRemover,
+)
 
 __all__ = [
-	"PAD_INDEX",
+	# constants
 	"DEFAULT_JITTER",
-	"laplace",
-	"BasicModel",
-	"KMeansMixtureInitialiser",
+	"PAD_INDEX",
+	# data structures
 	"Dataset",
 	"Dimensions",
 	"ModelConfig",
@@ -38,12 +55,43 @@ __all__ = [
 	"Hyperprior",
 	"Hyperposterior",
 	"MultivariateNormal",
+	# grids and input mappers
+	"UnionGrid",
+	"RegularGrid",
+	"KMeansGrid",
+	"MultiOutputUnionGrid",
+	"MergedGrid",
+	"ExactInputMapper",
+	"NearestInputMapper",
+	# io
 	"save_csv",
 	"load_csv",
+	# likelihood approximations
+	"IdentityLaplaceApproximator",
+	"BinomialLaplaceApproximator",
+	"GammaLaplaceApproximator",
+	"PoissonLaplaceApproximator",
+	"ExponentialLaplaceApproximator",
+	# models and prediction
+	"BasicModel",
+	"KMeansMixtureInitialiser",
+	"FunctionPredictor",
+	"ObservationPredictor",
+	# plotting
+	"plot_channel",
+	"plot_task",
+	"plot_dataset",
+	"plot_single_cluster_single_channel",
+	"plot_single_cluster",
+	"plot_clusters",
+	"plot_single_task_prediction",
+	# sampling and simulation
+	"sample_gp",
 	"generate_data",
-	"RandomDataRemover",
+	"known_noise_kernel",
 	"build_parameters",
 	"sample_parameters_from_priors",
+	"RandomDataRemover",
 ]
 
 __version__ = importlib.metadata.version("mimosa-ml")

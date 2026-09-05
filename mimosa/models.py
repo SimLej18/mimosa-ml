@@ -17,7 +17,9 @@ from mimosa.optimisers import ClusterOptimiser, TaskOptimiser
 from mimosa.mixture import KMeansMixtureInitialiser, MixtureInitialiser, MixtureUpdater
 from mimosa.prediction import FunctionPredictor, Predictor
 from mimosa.data_structures import Dataset, Grid, Mixture, Parameters, MultivariateNormal, Hyperposterior
-from mimosa import DEFAULT_JITTER
+from mimosa.constants import DEFAULT_JITTER
+
+__all__ = ["AbstractModel", "BasicModel"]
 
 
 class AbstractModel(eqx.Module):

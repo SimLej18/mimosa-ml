@@ -13,7 +13,12 @@ import equinox as eqx
 from mimosa.linalg import cho_factor
 from mimosa.data_structures import (Parameters, Dataset, Grid, Hyperposterior, PredictionMeanBlocks,
                                     PredictionCovBlocks, MultivariateNormal)
-from mimosa import DEFAULT_JITTER
+from mimosa.constants import DEFAULT_JITTER
+
+__all__ = [
+	"predict_task_channel", "predict_task_in_cluster", "predict_clusters", "predict", "Predictor",
+	"FunctionPredictor", "ObservationPredictor"
+]
 
 
 def predict_task_channel(output_obs: Array,

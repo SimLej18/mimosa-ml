@@ -11,3 +11,13 @@ repos:
     hooks:
       - id: nbstripout
         files: ^docs/examples/.*\.ipynb$
+
+  - repo: local
+    hooks:
+      - id: no-package-root-imports
+        name: mimosa submodules must not import from the package root
+        entry: >-
+          bash -c '! grep -Hn "^\s*\(from mimosa import\|import mimosa$\)" "$@"' --
+        language: system
+        files: ^mimosa/.*\.py$
+        exclude: ^mimosa/__init__\.py$

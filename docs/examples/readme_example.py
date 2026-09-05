@@ -4,12 +4,11 @@ import jax.random as jr
 from jax import vmap
 from kernax import ZeroMean, VarianceKernel, SEKernel, WhiteNoiseKernel
 
-from mimosa.data_structures import Dimensions, Parameters, ModelConfig
-from mimosa.synthetic import generate_data
-from mimosa.models import BasicModel
-from mimosa.grid import UnionGrid
-from mimosa.plot import plot_dataset, plot_clusters, plot_single_task_prediction
-from mimosa.sampling import sample_gp
+from mimosa import (
+    Dimensions, ModelConfig, Parameters,
+    BasicModel, UnionGrid, generate_data, sample_gp,
+    plot_dataset, plot_clusters, plot_single_task_prediction,
+)
 
 key = jr.PRNGKey(0)
 

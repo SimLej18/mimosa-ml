@@ -25,6 +25,11 @@ from jaxtyping import Bool, Float, Int
 
 from mimosa.data_structures import Dataset
 
+__all__ = [
+    "LaplaceApproximator", "IdentityLaplaceApproximator", "BinomialLaplaceApproximator",
+    "GammaLaplaceApproximator", "PoissonLaplaceApproximator", "ExponentialLaplaceApproximator"
+]
+
 
 class LaplaceApproximator(eqx.Module):
     """

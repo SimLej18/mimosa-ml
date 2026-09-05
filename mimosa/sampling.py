@@ -5,7 +5,9 @@ import jax.random as jr
 import jax.numpy as jnp
 from jax import Array
 
-from mimosa import DEFAULT_JITTER
+from mimosa.constants import DEFAULT_JITTER
+
+__all__ = ["sample_gp"]
 
 
 def sample_gp(key: Array, mean: Array, cov: Array, jitter: Array = DEFAULT_JITTER) -> Array:

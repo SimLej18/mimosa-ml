@@ -9,11 +9,16 @@ import jax.numpy as jnp
 from jax import Array
 import equinox as eqx
 
-from mimosa import PAD_INDEX
+from mimosa.constants import PAD_INDEX
 from mimosa.linalg import lexicographic_sort
 from mimosa.kmeans import minibatch_kmeans
 from mimosa.mappings import InputMapper, ExactInputMapper, NearestInputMapper
 from mimosa.data_structures import Grid, Dataset, ModelConfig
+
+__all__ = [
+    "GridBuilder", "UnionGrid", "RegularGrid", "KMeansGrid", "MultiOutputGridBuilder", "MultiOutputUnionGrid",
+    "MergedGrid"
+]
 
 
 class GridBuilder(eqx.Module):

@@ -11,7 +11,12 @@ import equinox as eqx
 
 from mimosa.linalg import cho_factor, cho_solve
 from mimosa.data_structures import Dataset, Grid, Hyperposterior, Hyperprior
-from mimosa import DEFAULT_JITTER
+from mimosa.constants import DEFAULT_JITTER
+
+__all__ = [
+	"single_channel_mvn_nll", "mvn_nll", "single_channel_trace_correction", "trace_correction", "magma_nll",
+	"clusters_nlls", "tasks_nlls", "ClusterNLL", "TaskNLL"
+]
 
 
 def single_channel_mvn_nll(value: Array, mean: Array, cov: Array, jitter: Array = DEFAULT_JITTER) -> Array:

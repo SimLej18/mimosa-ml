@@ -44,11 +44,11 @@ import matplotlib.pyplot as plt
 
 from kernax import BatchModule, ConstantMean, VarianceKernel, SEKernel, WhiteNoiseKernel
 
-from mimosa import (Dataset, Dimensions, Grid, Mixture, ModelConfig, Parameters, BasicModel,
-                    load_csv, build_parameters)
-from mimosa.grid import UnionGrid
-from mimosa.plot import plot_dataset, plot_clusters, plot_single_task_prediction
-from mimosa.sampling import sample_gp
+from mimosa import (
+    Dataset, Dimensions, Grid, Mixture, ModelConfig, Parameters,
+    BasicModel, UnionGrid, load_csv, build_parameters, sample_gp,
+    plot_dataset, plot_clusters, plot_single_task_prediction,
+)
 
 key = jr.PRNGKey(42)
 plt.rcParams['figure.dpi'] = 300

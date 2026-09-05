@@ -9,7 +9,12 @@ import jax.lax as jlx
 from jax import Array, jit, vmap
 from jax.lax import fori_loop
 
-from mimosa import DEFAULT_JITTER, PAD_INDEX
+from mimosa.constants import DEFAULT_JITTER, PAD_INDEX
+
+__all__ = [
+	"cho_factor", "cho_solve", "searchsorted_2d", "searchsorted_2d_vectorised", "lexicographic_sort",
+	"find_exact_mappings", "sq_dists", "find_nearest_mappings", "mapping_distances"
+]
 
 
 def cho_factor(cov: Array, jitter: Array = DEFAULT_JITTER) -> Array:

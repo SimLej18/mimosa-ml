@@ -12,7 +12,9 @@ from kernax import AbstractMean, AbstractKernel
 
 from mimosa.nll import clusters_nlls, tasks_nlls, ClusterNLL, TaskNLL
 from mimosa.data_structures import Dataset, Grid, Hyperprior, Hyperposterior, Mixture
-from mimosa import DEFAULT_JITTER
+from mimosa.constants import DEFAULT_JITTER
+
+__all__ = ["optimise_clusters", "optimise_tasks", "ClusterOptimiser", "TaskOptimiser"]
 
 
 def optimise_clusters(

@@ -39,11 +39,10 @@ from kernax import ZeroMean, VarianceKernel, SEKernel, WhiteNoiseKernel, BlockMe
 
 from mimosa import (
 	Dimensions, ModelConfig, DataRemovalConfig, Parameters,
-	BasicModel, generate_data, RandomDataRemover, save_csv, load_csv, build_parameters,
+	BasicModel, MultiOutputUnionGrid,
+	generate_data, RandomDataRemover, save_csv, load_csv, build_parameters, sample_gp,
+	plot_dataset, plot_clusters, plot_single_task_prediction,
 )
-from mimosa.grid import MultiOutputUnionGrid
-from mimosa.plot import plot_dataset, plot_clusters, plot_single_task_prediction
-from mimosa.sampling import sample_gp
 
 key = jr.PRNGKey(42)
 plt.rcParams['figure.dpi']=300

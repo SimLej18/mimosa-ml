@@ -13,6 +13,12 @@ from beartype import beartype as typechecker
 import equinox as eqx
 from kernax import MeanLike, KernelLike
 
+__all__ = [
+	"Dimensions", "ModelConfig", "DataRemovalConfig", "validate_model_config", "Parameters", "ParameterPriors",
+	"Dataset", "Grid", "MultivariateNormal", "Hyperprior", "Hyperposterior", "Mixture", "PredictionMeanBlocks",
+	"PredictionCovBlocks"
+]
+
 
 @dataclass(frozen=True)
 class Dimensions:

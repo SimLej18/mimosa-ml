@@ -11,7 +11,9 @@ from kernax import AbstractKernel
 from mimosa.nll import tasks_nlls
 from mimosa.kmeans import soft_kmeans
 from mimosa.data_structures import Dataset, Grid, Hyperposterior, Mixture
-from mimosa import DEFAULT_JITTER
+from mimosa.constants import DEFAULT_JITTER
+
+__all__ = ["MixtureInitialiser", "KMeansMixtureInitialiser", "update_mixture", "MixtureUpdater"]
 
 
 class MixtureInitialiser(eqx.Module):

@@ -32,6 +32,11 @@ from jax import Array
 
 from mimosa.data_structures import Dataset, Dimensions, Grid, Hyperposterior, Hyperprior, Mixture, MultivariateNormal
 
+__all__ = [
+	"IdArg", "plot_channel", "plot_task", "plot_dataset", "plot_single_cluster_single_channel",
+	"plot_single_cluster", "plot_clusters", "plot_single_task_prediction"
+]
+
 plt.style.use("seaborn-v0_8-whitegrid")
 
 

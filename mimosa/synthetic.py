@@ -18,7 +18,13 @@ from mimosa.data_structures import Dimensions, Parameters, ParameterPriors, Mode
 from mimosa.grid import RegularGrid
 from mimosa.linalg import find_exact_mappings
 from mimosa.sampling import sample_gp
-from mimosa import DEFAULT_JITTER
+from mimosa.constants import DEFAULT_JITTER
+
+__all__ = [
+	"generate_grid", "sample_inputs", "build_mean", "build_mean_kernel", "build_task_kernel",
+	"known_noise_kernel", "build_parameters", "sample_parameters_from_priors", "generate_data",
+	"AbstractDataRemover", "RandomDataRemover"
+]
 
 
 def generate_grid(dims: Dimensions, config: ModelConfig, bounds: list[tuple[float, float]]) -> Grid:

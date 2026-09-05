@@ -129,18 +129,16 @@ def predict_clusters(task_outputs: Array,
 	Predicted distribution over this task's channels at the grid points, batched over mean-processes
 	(and channel dimensions).
 	"""
-	post_mean_obs = hyperposterior.mean[:, :, mappings]
-	post_cov_obs = hyperposterior.covariance[:, :, mappings, :][:, :, :, mappings]
-	post_cov_crossed = hyperposterior.covariance[:, :, mappings, :]
+	post_obs = hyperposterior.marginal(mappings)
 
 	cov_blocks = PredictionCovBlocks(
-		cov_obs=post_cov_obs + task_cov_blocks.cov_obs,
+		cov_obs=post_obs.covariance + task_cov_blocks.cov_obs,
 		cov_grid=hyperposterior.covariance + task_cov_blocks.cov_grid,
-		cov_crossed=post_cov_crossed + task_cov_blocks.cov_crossed
+		cov_crossed=hyperposterior.cross_covariance(mappings) + task_cov_blocks.cov_crossed
 	)
 
 	post_mean_blocks = PredictionMeanBlocks(
-		mean_obs=post_mean_obs,
+		mean_obs=post_obs.mean,
 		mean_grid=hyperposterior.mean
 	)
 

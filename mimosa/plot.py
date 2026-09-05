@@ -148,7 +148,8 @@ def _mvn_cell(obj, grid: Grid, dims: Dimensions, k_id: int, c_id: int, o_id: int
 	k = k_id if obj.mean.shape[0] > 1 else 0
 	c = c_id if obj.mean.shape[1] > 1 else 0
 	rows = _grid_block(grid, dims, o_id, obj.mean.shape[-1])
-	return obj.mean[k, c, rows], obj.covariance[k, c][rows][:, rows]
+	cell = obj[k, c].marginal(rows)
+	return cell.mean, cell.covariance
 
 
 def _palette(n: int) -> list:
@@ -714,8 +715,9 @@ def plot_single_task_prediction(
 			a.plot(x_grid, np.asarray(cluster_mean), linestyle="--", color=palette[k], alpha=float(weights[k]))
 
 		if prediction is not None:
-			pred_mean = np.asarray(prediction.mean[block])
-			pred_std = np.sqrt(np.diagonal(np.asarray(prediction.covariance[block][:, block])))
+			pred_block = prediction.marginal(block)
+			pred_mean = np.asarray(pred_block.mean)
+			pred_std = np.sqrt(np.diagonal(np.asarray(pred_block.covariance)))
 			a.plot(x_grid, pred_mean, linestyle="-", color=prediction_color)
 			a.fill_between(x_grid, pred_mean - ci_scale * pred_std, pred_mean + ci_scale * pred_std,
 							color=prediction_color, alpha=ci_alpha, linewidth=0)

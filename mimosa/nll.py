@@ -210,29 +210,14 @@ def tasks_nlls(dataset: Dataset, grid: Grid, task_covs: Array, hyperposterior: H
 	-------
 	Negative log-likelihood of every task, under each mean-process, for each channel. Shape `(T, K, C)`.
 	"""
-	# A nice trick we can use in this function is that it can just be a vmap over `full_nll`, providing only the right
-	# portions of post_means and post_covs to each task depending on the mappings.
 	task_covs = jnp.broadcast_to(task_covs, (dataset.outputs.shape[0],)+hyperposterior.covariance.shape[:-2]+task_covs.shape[-2:])
 
-	if dataset.inputs.shape[0] == 1:  # no vmap over mappings
-		return vmap(
-			lambda o, k_t_c: vmap(
-				lambda p_m, p_c, t_c:
-					magma_nll(
-						o,
-						p_m[:, grid.mappings[0]],
-						t_c,
-						p_c[:, grid.mappings[0], :][:, :, grid.mappings[0]],
-						jitter))(hyperposterior.mean, hyperposterior.covariance, k_t_c))(dataset.outputs, task_covs)
-	return vmap(
-		lambda o, m, k_t_c: vmap(
-			lambda p_m, p_c, t_c:
-				magma_nll(
-					o,
-					p_m[:, m],
-					t_c,
-					p_c[:, m, :][:, :, m],
-					jitter))(hyperposterior.mean, hyperposterior.covariance, k_t_c))(dataset.outputs, grid.mappings, task_covs)
+	def task_nll(outputs, mappings, task_cov):
+		post = hyperposterior.marginal(mappings)  # (K, C, O*N)
+		return vmap(lambda p, t_c: magma_nll(outputs, p.mean, t_c, p.covariance, jitter))(post, task_cov)
+
+	mappings = grid.mappings[0] if dataset.inputs.shape[0] == 1 else grid.mappings
+	return vmap(task_nll, in_axes=(0, None if mappings.ndim == 1 else 0, 0))(dataset.outputs, mappings, task_covs)
 
 
 class ClusterNLL(eqx.Module):

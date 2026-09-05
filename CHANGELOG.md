@@ -13,6 +13,9 @@ before upgrading.
 
 ### Added
 
+* `MultivariateNormal.marginal()` and `MultivariateNormal.cross_covariance()`: index `mean` and
+  `covariance` jointly along the points axis. Used wherever a hyperposterior is restricted to a task's 
+  observed points via `Grid.mappings`, or to one output's block of the grid.
 * `init_hyperposterior`, `init_mixture`, `freeze_hyperposterior`, `freeze_mixture`,
   `freeze_cluster_parameters` and `freeze_task_parameters` arguments to `BasicModel.fit()`: warm-start
   the fit from a known hyperposterior/mixture, and hold any of the four blocks fixed across the VEM

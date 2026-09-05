@@ -272,6 +272,35 @@ class MultivariateNormal(eqx.Module):
 		"""
 		return MultivariateNormal(mean=self.mean[item], covariance=self.covariance[item])
 
+	def marginal(self, indices) -> "MultivariateNormal":
+		"""
+		Marginal distribution over a subset of the P dimensions, indexing `mean` and `covariance`
+		jointly along the points (last) axis.
+
+		Parameters
+		----------
+		indices
+			Selector along the event axis: a `slice`, a 1-D integer array, or a 1-D boolean mask.
+
+			An out-of-bounds entry -- `mimosa.PAD_INDEX`, marking an input point with no grid point
+			-- is clamped by the gather.
+
+		Returns
+		-------
+		Distribution over the selected dimensions. A subclass marginalises to a plain
+		`MultivariateNormal`: the result is no longer over the grid points.
+		"""
+		return MultivariateNormal(
+			mean=self.mean[..., indices],
+			covariance=self.covariance[..., indices, :][..., :, indices],
+		)
+
+	def cross_covariance(self, indices) -> Float[Array, "... Q P"]:
+		"""
+		Covariance between the dimensions selected by `indices` (see `marginal`) and all P dimensions.
+		"""
+		return self.covariance[..., indices, :]
+
 
 @jaxtyped(typechecker=typechecker)
 class Hyperprior(MultivariateNormal):

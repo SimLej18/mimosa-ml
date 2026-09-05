@@ -3,6 +3,8 @@ Predict outputs at the grid points, for every task and every mean-process, by Ga
 conditioning of each task on its observed values and on the mean-process hyperposterior.
 """
 
+from abc import abstractmethod
+
 import jax.numpy as jnp
 import jax.lax as lax
 from jax import vmap, Array
@@ -191,6 +193,7 @@ def predict(dataset: Dataset,
             grid: Grid,
             hyperposterior: Hyperposterior,
             parameters: Parameters,
+            noisy: bool = False,
             jitter: Array = DEFAULT_JITTER) -> MultivariateNormal:
 	"""
 	Predict every task's outputs at the grid points, under every mean-process.
@@ -207,6 +210,10 @@ def predict(dataset: Dataset,
 		Posterior distribution over every mean-process's values at the grid points.
 	parameters
 		Model parameters (task/noise kernels) used to compute the task covariances.
+	noisy
+		Whether to include observation noise at the predicted points. Noise at a predicted point is
+		independent of the noise on the observations, so it enters `cov_grid` only and never
+		`cov_crossed` -- including where a grid point coincides with an observed input.
 	jitter
 		Diagonal jitter added before Cholesky factorization, for numerical stability.
 
@@ -214,16 +221,27 @@ def predict(dataset: Dataset,
 	-------
 	Predicted distribution over every task's outputs at the grid points, batched over tasks,
 	mean-processes and channel dimensions.
+
+	Notes
+	-----
+	When using an `InputSpecificParamModule` to contain point-specific noise, setting `noisy=True`
+	will result in an internal Kernax error, as we cannot make a noisy prediction on points for which
+	we don't know the noise.
 	"""
+	if grid.mappings is None:
+		raise ValueError("`grid.mappings` is `None`. Mappings must be computed to make a prediction.")
+
 	cross_points, cross_ids = _cross_grid(grid, dataset.output_ids, hyperposterior)
 
 	if dataset.inputs.shape[0] == 1:
 		extended_grid = grid.points
 		output_ids = dataset.output_ids[0] if dataset.output_ids is not None else None
+
 		task_cov_blocks = PredictionCovBlocks(
 			cov_obs=parameters.task_kernel(dataset.clean_inputs[0], output_ids=output_ids)
 			        + parameters.noise_kernel(dataset.clean_inputs[0], output_ids=output_ids),
-			cov_grid=parameters.task_kernel(extended_grid, output_ids=grid.output_ids),
+			cov_grid=parameters.task_kernel(extended_grid, output_ids=grid.output_ids)
+			         + (parameters.noise_kernel(extended_grid, output_ids=grid.output_ids) if noisy else 0.),
 			cov_crossed=parameters.task_kernel(dataset.clean_inputs[0], cross_points, output_ids=output_ids, output_ids2=cross_ids),
 		)
 	else:
@@ -235,10 +253,12 @@ def predict(dataset: Dataset,
 			else jnp.broadcast_to(grid.output_ids, dataset.inputs.shape[:1] + grid.output_ids.shape)
 		extended_cross_ids = None if cross_ids is None \
 			else jnp.broadcast_to(cross_ids, dataset.inputs.shape[:1] + cross_ids.shape)
+
 		task_cov_blocks = PredictionCovBlocks(
 			cov_obs=parameters.task_kernel(dataset.clean_inputs, output_ids=dataset.output_ids)
 			        + parameters.noise_kernel(dataset.clean_inputs, output_ids=dataset.output_ids),
-			cov_grid=parameters.task_kernel(extended_grid, output_ids=extended_grid_ids),
+			cov_grid=parameters.task_kernel(extended_grid, output_ids=extended_grid_ids)
+			         + (parameters.noise_kernel(extended_grid, output_ids=extended_grid_ids) if noisy else 0.),
 			cov_crossed=parameters.task_kernel(dataset.clean_inputs, extended_cross_points, output_ids=dataset.output_ids, output_ids2=extended_cross_ids),
 		)
 
@@ -262,14 +282,46 @@ def predict(dataset: Dataset,
 
 class Predictor(eqx.Module):
 	"""
-	Callable wrapper around `predict`, as an `equinox.Module`.
+	Base class for callable wrappers around `predict`, as `equinox.Module`s.
+
+	Subclasses set `noisy`, which selects what is predicted: the latent function, or an observation
+	of it at the predicted points.
 	"""
+	@property
+	@abstractmethod
+	def noisy(self) -> bool:
+		"""
+		Whether the prediction includes observation noise at the predicted points. See `predict`.
+		"""
+
 	def __call__(self, dataset: Dataset,
-            grid: Grid,
-            hyperposterior: Hyperposterior,
-            parameters: Parameters,
-            jitter: Array = DEFAULT_JITTER) -> MultivariateNormal:
+	             grid: Grid,
+	             hyperposterior: Hyperposterior,
+	             parameters: Parameters,
+	             jitter: Array = DEFAULT_JITTER) -> MultivariateNormal:
 		"""
 		See `predict`.
 		"""
-		return predict(dataset, grid, hyperposterior, parameters, jitter)
+		return predict(dataset, grid, hyperposterior, parameters, self.noisy, jitter)
+
+
+class FunctionPredictor(Predictor):
+	r"""
+	Computes the prediction for the function $f_t(x_t)$ of each task in `dataset`.
+
+	As we predict the *function*, prediction doesn't include noise at predicted points, conditioned
+	on noisy observations.
+	"""
+	noisy = False
+
+
+class ObservationPredictor(Predictor):
+	r"""
+	Computes the prediction for the observations $y_t = f_t(x_t) + \varepsilon$ of each task in
+	`dataset`.
+
+	As we predict an *observation*, prediction includes observation noise at predicted points.
+
+	Will not work with an `InputSpecificParamModule` in `noise_kernel`.
+	"""
+	noisy = True

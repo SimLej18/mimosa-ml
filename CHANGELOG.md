@@ -25,6 +25,13 @@ before upgrading.
 * `mimosa.mappings`, with `InputMapper` and `ExactInputMapper`: grid builders now delegate
   input-to-grid-point mapping to their `input_mapper` attribute.
 * `mimosa.PAD_INDEX`: the index an input point maps to when it is not on the grid.
+* `mimosa.prediction.ObservationPredictor`, predicting the observations
+  $y_t = f_t(x_t) + \varepsilon$ rather than the latent function $f_t(x_t)$, i.e. adding observation
+  noise at the predicted points. Not usable with a point-specific noise kernel, whose value at an
+  unobserved point is unknown.
+* `predictor` argument to `BasicModel`, selecting between `FunctionPredictor` (the default,
+  unchanged behaviour) and `ObservationPredictor`.
+* `noisy` argument to `mimosa.prediction.predict()`, which the two predictors set.
 
 ### Fixed
 
@@ -54,6 +61,10 @@ before upgrading.
 * Unmapped input points map to `PAD_INDEX` instead of `len(points)`. Code comparing mappings
   against a grid length, or doing arithmetic on them, must be updated.
 * `mimosa.linalg.compute_mapping()` is renamed `find_exact_mappings()`.
+* `mimosa.prediction.Predictor` is now an abstract base class: `Predictor()` raises `TypeError`.
+  Use `FunctionPredictor()` for the previous behaviour.
+* `mimosa.prediction.predict()` takes `noisy` before `jitter`, so callers passing `jitter`
+  positionally now bind it to `noisy`. Pass it by keyword.
 
 ---
 

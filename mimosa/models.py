@@ -15,7 +15,7 @@ from mimosa.hyperpost import Hyperpost
 from mimosa.nll import ClusterNLL, TaskNLL
 from mimosa.optimisers import ClusterOptimiser, TaskOptimiser
 from mimosa.mixture import KMeansMixtureInitialiser, MixtureInitialiser, MixtureUpdater
-from mimosa.prediction import Predictor
+from mimosa.prediction import FunctionPredictor, Predictor
 from mimosa.data_structures import Dataset, Grid, Mixture, Parameters, MultivariateNormal, Hyperposterior
 from mimosa import DEFAULT_JITTER
 
@@ -66,7 +66,8 @@ class BasicModel(AbstractModel):
     task_optimiser
         Optimiser for the task and noise kernel hyperparameters.
     predictor
-        Computes predictions from a fitted model.
+        Computes predictions from a fitted model: `mimosa.prediction.FunctionPredictor` for the
+        latent function, `mimosa.prediction.ObservationPredictor` to include observation noise.
     jitter
         Diagonal jitter added before Cholesky factorizations, for numerical stability.
     """
@@ -81,7 +82,7 @@ class BasicModel(AbstractModel):
     jitter: Array
 
     def __init__(self, prng_key: Array, n_clusters: int, jitter: Array = DEFAULT_JITTER,
-                 n_outputs: int = 1):
+                 n_outputs: int = 1, predictor: Predictor = FunctionPredictor()):
         """
         Parameters
         ----------
@@ -96,6 +97,9 @@ class BasicModel(AbstractModel):
             summarises each task per output rather than pooling them. Only needed when the outputs
             do *not* share their input locations (`dataset.output_ids is not None`); otherwise the
             count is read off the Dataset's shapes. See `mimosa.mixture.KMeansMixtureInitialiser`.
+        predictor
+            Whether `predict` returns the latent function (`FunctionPredictor`, the default) or an
+            observation of it, including observation noise (`ObservationPredictor`).
         """
         self.mixture_initialiser = KMeansMixtureInitialiser(prng_key, n_clusters, n_outputs)
         self.mixture_updater = MixtureUpdater()
@@ -110,7 +114,7 @@ class BasicModel(AbstractModel):
             solver=optx.LBFGS(atol=1e-3, rtol=1e-3),
             nll=self.task_nll,
         )
-        self.predictor = Predictor()
+        self.predictor = predictor
         self.jitter = jitter
 
     @eqx.filter_jit

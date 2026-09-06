@@ -13,17 +13,35 @@ from kernax import BatchModule, InputSpecificParamModule, WhiteNoiseKernel, Abst
 from kernax.parametrisations import NonTrainableParametrisation
 from kernax.hp_sampling import sample_hps_from_uniform_priors
 
-from mimosa.data_structures import Dimensions, Parameters, ParameterPriors, ModelConfig, Hyperprior, Mixture, Dataset, \
-	Grid, MultivariateNormal, DataRemovalConfig
+from mimosa.data_structures import (
+	Dimensions,
+	Parameters,
+	ParameterPriors,
+	ModelConfig,
+	Hyperprior,
+	Mixture,
+	Dataset,
+	Grid,
+	MultivariateNormal,
+	DataRemovalConfig,
+)
 from mimosa.grid import RegularGrid
 from mimosa.linalg import find_exact_mappings
 from mimosa.sampling import sample_gp
 from mimosa.constants import DEFAULT_JITTER
 
 __all__ = [
-	"generate_grid", "sample_inputs", "build_mean", "build_mean_kernel", "build_task_kernel",
-	"known_noise_kernel", "build_parameters", "sample_parameters_from_priors", "generate_data",
-	"AbstractDataRemover", "RandomDataRemover"
+	"generate_grid",
+	"sample_inputs",
+	"build_mean",
+	"build_mean_kernel",
+	"build_task_kernel",
+	"known_noise_kernel",
+	"build_parameters",
+	"sample_parameters_from_priors",
+	"generate_data",
+	"AbstractDataRemover",
+	"RandomDataRemover",
 ]
 
 
@@ -42,11 +60,13 @@ def generate_grid(dims: Dimensions, config: ModelConfig, bounds: list[tuple[floa
 
 	Returns
 	-------
-	A Grid instance with no mappings.
-	The grid points. shape `(~G, I)` if isotopic_output_in_grid and (O * ~G, I) otherwise, where ~G is the first power of dims.I above or equal to `G`.
+	Grid of points, `output_ids` and `n_outputs`, with no mappings. Its points have shape `(~G, I)`
+	if `isotopic_output_in_grid`, and `(O * ~G, I)` otherwise, where `~G` is
+	`round(dims.G ** (1 / dims.I)) ** dims.I` -- the nearest `dims.I`-th power to `dims.G`, which may
+	fall below it (see `generate_data`'s Notes).
 	"""
 	if config.isotopic_output_in_grid and len(bounds) > 1:
-		raise ValueError(f"Cannot have different output bounds for isotopic outputs grid.")
+		raise ValueError("Cannot have different output bounds for isotopic outputs grid.")
 	if not config.isotopic_output_in_grid and len(bounds) != dims.O:
 		raise ValueError(f"Cannot build heterotopic grid for {dims.O} outputs with only {len(bounds)} bounds.")
 
@@ -55,8 +75,7 @@ def generate_grid(dims: Dimensions, config: ModelConfig, bounds: list[tuple[floa
 	blocks = [RegularGrid(bounds=(b,) * dims.I, n_points=grid_size).compute_points() for b in bounds]
 	points = jnp.concat(blocks, axis=0)
 
-	output_ids = None if config.isotopic_output_in_grid \
-		else jnp.repeat(jnp.arange(dims.O), grid_size ** dims.I)
+	output_ids = None if config.isotopic_output_in_grid else jnp.repeat(jnp.arange(dims.O), grid_size**dims.I)
 	return Grid(points=points, mappings=None, output_ids=output_ids, n_outputs=dims.O)
 
 
@@ -108,7 +127,7 @@ def sample_inputs(key: Array, grid: Grid, dims: Dimensions, config: ModelConfig)
 				mappings = vmap(lambda i: find_exact_mappings(grid.points, i))(inputs)
 
 			if dims.O > 1:
-				mappings = (jnp.tile(mappings, dims.O) + output_mapping_offset)
+				mappings = jnp.tile(mappings, dims.O) + output_mapping_offset
 
 		else:
 			if dims.O == 1:
@@ -125,40 +144,40 @@ def sample_inputs(key: Array, grid: Grid, dims: Dimensions, config: ModelConfig)
 				mappings = (mappings.reshape(dims.N * dims.O) + output_mapping_offset)[None, ...]
 
 			else:
-				inputs = vmap(lambda k: jr.choice(k, grid.points, (dims.N,), replace=False))(jr.split(key, dims.T * dims.O))
+				inputs = vmap(lambda k: jr.choice(k, grid.points, (dims.N,), replace=False))(
+					jr.split(key, dims.T * dims.O)
+				)
 				mappings = vmap(lambda i: find_exact_mappings(grid.points, i))(inputs)
 
 				inputs = inputs.reshape(dims.T, dims.N * dims.O, dims.I)
 				mappings = mappings.reshape(dims.T, dims.N * dims.O) + output_mapping_offset
 
-
-
 	else:
 		if config.isotopic_output_in_tasks:
-			raise ValueError(f"Cannot have heterotopic task inputs for each output sampled from an isotopic grid.")
+			raise ValueError("Cannot have heterotopic task inputs for each output sampled from an isotopic grid.")
 		else:
-
 			output_ids = jnp.repeat(jnp.arange(dims.O, dtype=int), dims.N)
 
 			if config.isotopic_tasks:
-				mappings = vmap(lambda k: jr.choice(k, jnp.arange(G), (dims.N,), replace=False))(
-					jr.split(key, dims.O))
-				mappings = (mappings.reshape(dims.N * dims.O) + output_mapping_offset)[None, ...]  # Broadcast to every tasks
+				mappings = vmap(lambda k: jr.choice(k, jnp.arange(G), (dims.N,), replace=False))(jr.split(key, dims.O))
+				mappings = (mappings.reshape(dims.N * dims.O) + output_mapping_offset)[
+					None, ...
+				]  # Broadcast to every tasks
 				inputs = grid.points[mappings[0]][None, ...]  # Broadcast to every tasks
 
 			else:
 				mappings = vmap(lambda k: jr.choice(k, jnp.arange(G), (dims.N,), replace=False))(
-					jr.split(key, dims.O * dims.T))
-				mappings = (mappings.reshape(dims.T, dims.N * dims.O) + output_mapping_offset).reshape(dims.T, dims.O * dims.N)
+					jr.split(key, dims.O * dims.T)
+				)
+				mappings = (mappings.reshape(dims.T, dims.N * dims.O) + output_mapping_offset).reshape(
+					dims.T, dims.O * dims.N
+				)
 				inputs = grid.points[mappings]
 
 	return inputs, output_ids, mappings
 
 
-def build_mean(
-		mean: AbstractMean,
-		dims: Dimensions,
-		config: ModelConfig) -> AbstractModule:
+def build_mean(mean: AbstractMean, dims: Dimensions, config: ModelConfig) -> AbstractModule:
 	"""
 	Batch `mean` across channel dimensions and mean-processes, according to `config`'s HP-sharing
 	flags, for synthetic data generation.
@@ -193,10 +212,7 @@ def build_mean(
 	return mean
 
 
-def build_mean_kernel(
-		mean_kernel: AbstractKernel,
-		dims: Dimensions,
-		config: ModelConfig) -> AbstractModule:
+def build_mean_kernel(mean_kernel: AbstractKernel, dims: Dimensions, config: ModelConfig) -> AbstractModule:
 	"""
 	Batch `mean_kernel` across channel dimensions and mean-processes, according to `config`'s
 	HP-sharing flags, for synthetic data generation.
@@ -233,10 +249,7 @@ def build_mean_kernel(
 	return mean_kernel
 
 
-def build_task_kernel(
-		task_kernel: AbstractKernel,
-		dims: Dimensions,
-		config: ModelConfig) -> AbstractModule:
+def build_task_kernel(task_kernel: AbstractKernel, dims: Dimensions, config: ModelConfig) -> AbstractModule:
 	"""
 	Batch `task_kernel` across channel dimensions, mean-processes and tasks, according to `config`'s
 	HP-sharing flags, for synthetic data generation. Used for both the task and noise kernels.
@@ -318,14 +331,15 @@ def known_noise_kernel(variances: Array, dims: Dimensions, config: ModelConfig) 
 	if variances.shape[1] != n_points:
 		raise NotImplementedError(
 			"Multi-output datasets sharing their input locations are not supported: the known noise "
-			f"spans {variances.shape[1]} rows, but the kernel only sees {n_points} input points.")
+			f"spans {variances.shape[1]} rows, but the kernel only sees {n_points} input points."
+		)
 
 	kernel = InputSpecificParamModule(
-		WhiteNoiseKernel(noise=0., noise_parametrisation=NonTrainableParametrisation()), n_points)
+		WhiteNoiseKernel(noise=0.0, noise_parametrisation=NonTrainableParametrisation()), n_points
+	)
 	kernel = BatchModule(kernel, batch_size=dims.C, batch_in_axes=0, batch_over_inputs=False)
 	kernel = BatchModule(kernel, batch_size=1, batch_in_axes=None, batch_over_inputs=False)
-	kernel = BatchModule(kernel, batch_size=dims.T, batch_in_axes=0,
-	                     batch_over_inputs=not config.isotopic_tasks)
+	kernel = BatchModule(kernel, batch_size=dims.T, batch_in_axes=0, batch_over_inputs=not config.isotopic_tasks)
 	return kernel.replace(noise=jnp.moveaxis(jnp.nan_to_num(variances), -1, 1))
 
 
@@ -394,13 +408,13 @@ def sample_parameters_from_priors(key: Array, parameters: Parameters, priors: Pa
 
 
 def generate_data(
-		key: Array,
-		dims: Dimensions,
-		parameters: Parameters,
-		config: ModelConfig,
-		priors: ParameterPriors | None = None,
-		input_range: None | list[tuple[float, float]] = None,
-		jitter: Array = DEFAULT_JITTER
+	key: Array,
+	dims: Dimensions,
+	parameters: Parameters,
+	config: ModelConfig,
+	priors: ParameterPriors | None = None,
+	input_range: None | list[tuple[float, float]] = None,
+	jitter: Array = DEFAULT_JITTER,
 ) -> tuple[Dataset, Grid, Hyperprior, Mixture, Parameters, Array, MultivariateNormal]:
 	"""
 	Generate a synthetic multi-task, multi-cluster dataset from GP priors.
@@ -456,12 +470,12 @@ def generate_data(
 
 	if dims.I > 1:
 		grid_size = max(round(dims.G ** (1 / dims.I)), 1)
-		if grid_size ** dims.I != dims.G:
+		if grid_size**dims.I != dims.G:
 			raise ValueError(
 				f"dims.G={dims.G} is not an integer to the power of dims.I={dims.I}. "
-				f"Closest valid values are {grid_size ** dims.I} and {(grid_size + 1) ** dims.I}."
+				f"Closest valid values are {grid_size**dims.I} and {(grid_size + 1) ** dims.I}."
 			)
-	
+
 	# Step 1: generate the grid
 	grid = generate_grid(dims, config, input_range)
 
@@ -478,7 +492,10 @@ def generate_data(
 
 	# Step 5: sample mean processes for each cluster from the mean and mean kernel, evaluated on the grid
 	# mean has shape (K, C, O*G), cov has shape (K, C, O*G, O*G)
-	hyperprior = Hyperprior(mean=parameters.cluster_mean(grid.points, output_ids=grid.output_ids), covariance=parameters.cluster_kernel(grid.points, output_ids=grid.output_ids))
+	hyperprior = Hyperprior(
+		mean=parameters.cluster_mean(grid.points, output_ids=grid.output_ids),
+		covariance=parameters.cluster_kernel(grid.points, output_ids=grid.output_ids),
+	)
 
 	if config.shared_channel_hps:
 		sample_channels = vmap(lambda k, m, c: sample_gp(k, m[0], c[0], jitter=jitter), in_axes=(0, None, None))
@@ -498,30 +515,45 @@ def generate_data(
 	cluster_means = sample_clusters(subkeys, hyperprior.mean, hyperprior.covariance)  # Shape (K, C, O*G)
 
 	# Step 6: assign tasks to clusters
-	responsibilities = jnp.eye(dims.K)[jnp.array(jnp.floor(jnp.arange(dims.T) / dims.T * dims.K), dtype=int)]  # Shape (T, K)
+	responsibilities = jnp.eye(dims.K)[
+		jnp.array(jnp.floor(jnp.arange(dims.T) / dims.T * dims.K), dtype=int)
+	]  # Shape (T, K)
 	mixture = Mixture(responsibilities=responsibilities)
 
 	# Step 7: sample task processes for each task from the task kernel, evaluated on the task inputs
 	task_means_on_grid = cluster_means[jnp.argmax(mixture.responsibilities, axis=1), ...]  # Shape (T, C, O*G)
 	if config.isotopic_tasks:
-		task_means = vmap(lambda t_m, m: t_m[:, m], in_axes=(0, None))(task_means_on_grid, mappings[0])  # Shape (T, C, O*N)
+		task_means = vmap(lambda t_m, m: t_m[:, m], in_axes=(0, None))(
+			task_means_on_grid, mappings[0]
+		)  # Shape (T, C, O*N)
 	else:
 		task_means = vmap(lambda t_m, m: t_m[:, m], in_axes=(0, 0))(task_means_on_grid, mappings)  # Shape (T, C, O*N)
 
 	if output_ids is not None:
-		dataset_output_ids = jnp.broadcast_to(output_ids, ((1 if config.isotopic_tasks else dims.T),) + output_ids.shape)
+		# output_ids is shared across tasks here, but the algorithm should support it varying per
+		# task too -- so its leading axis mirrors `inputs`' own (1 if isotopic_tasks, T otherwise),
+		# rather than adding a dedicated sharing flag.
+		dataset_output_ids = jnp.broadcast_to(
+			output_ids, ((1 if config.isotopic_tasks else dims.T),) + output_ids.shape
+		)
 	else:
 		dataset_output_ids = None
 
 	if config.isotopic_tasks:
-		task_covs = parameters.task_kernel(inputs[0], output_ids=output_ids) + parameters.noise_kernel(inputs[0], output_ids=output_ids)
+		task_covs = parameters.task_kernel(inputs[0], output_ids=output_ids) + parameters.noise_kernel(
+			inputs[0], output_ids=output_ids
+		)
 	else:
-		task_covs = parameters.task_kernel(inputs, output_ids=dataset_output_ids) + parameters.noise_kernel(inputs, output_ids=dataset_output_ids)
+		task_covs = parameters.task_kernel(inputs, output_ids=dataset_output_ids) + parameters.noise_kernel(
+			inputs, output_ids=dataset_output_ids
+		)
 	# Shape (T, K, C, O*N, O*N), with T=1 if shared_task_hps, K=1 if not cluster_specific_task_hps and C=1 if shared_channel_hps
 
 	if config.cluster_specific_task_hps:
 		# Select covariance from the "right" cluster for each task
-		task_covs = task_covs[jnp.arange(len(task_covs)),jnp.argmax( mixture.responsibilities, axis=1)]  # Shape (T, C, O*N, O*N) with T=1 if shared_task_hps and C=1 if shared_channel_hps
+		task_covs = task_covs[
+			jnp.arange(len(task_covs)), jnp.argmax(mixture.responsibilities, axis=1)
+		]  # Shape (T, C, O*N, O*N) with T=1 if shared_task_hps and C=1 if shared_channel_hps
 	else:
 		task_covs = task_covs[:, 0, ...]  # Shape (T, C, O*N, O*N) with T=1 if shared_task_hps and C=1 if shared_channel_hps
 
@@ -544,14 +576,6 @@ def generate_data(
 
 	outputs = sample_tasks(subkeys, task_means, task_covs).mT  # Shape (T, O*N, C)
 
-	if output_ids is not None:
-		# output_ids is shared across tasks here, but the algorithm should support it varying per
-		# task too -- so its leading axis mirrors `inputs`' own (1 if isotopic_tasks, T otherwise),
-		# rather than adding a dedicated sharing flag.
-		dataset_output_ids = jnp.broadcast_to(output_ids, ((1 if config.isotopic_tasks else dims.T),) + output_ids.shape)
-	else:
-		dataset_output_ids = None
-
 	dataset = Dataset(inputs=inputs, outputs=outputs, output_ids=dataset_output_ids)
 	grid = dataclasses.replace(grid, mappings=mappings)
 
@@ -562,9 +586,11 @@ class AbstractDataRemover(eqx.Module):
 	"""
 	Base class for modules that remove data points from a Dataset generated by `generate_data`.
 	"""
+
 	@abstractmethod
-	def __call__(self, key: Array, dataset: Dataset, config: DataRemovalConfig,
-				grid: Grid | None = None) -> Dataset | tuple[Dataset, Grid]:
+	def __call__(
+		self, key: Array, dataset: Dataset, config: DataRemovalConfig, grid: Grid | None = None
+	) -> Dataset | tuple[Dataset, Grid]:
 		"""
 		Remove data points from `dataset`, according to `config`.
 
@@ -590,11 +616,13 @@ class AbstractDataRemover(eqx.Module):
 class RandomDataRemover(AbstractDataRemover):
 	"""
 	Removes data points at random, per `DataRemovalConfig`. A missing point is marked by NaN in
-	`dataset.outputs`; this masking is read downstream in `mimosa-ml.hyperpost`, `mimosa-ml.nll` and
-	`mimosa-ml.prediction`.
+	`dataset.outputs`; this masking is read downstream in `mimosa.hyperpost`, `mimosa.nll` and
+	`mimosa.prediction`.
 	"""
-	def __call__(self, key: Array, dataset: Dataset, config: DataRemovalConfig,
-				grid: Grid | None = None) -> Dataset | tuple[Dataset, Grid]:
+
+	def __call__(
+		self, key: Array, dataset: Dataset, config: DataRemovalConfig, grid: Grid | None = None
+	) -> Dataset | tuple[Dataset, Grid]:
 		"""
 		See `AbstractDataRemover.__call__`.
 		"""
@@ -605,9 +633,11 @@ class RandomDataRemover(AbstractDataRemover):
 		O = ON // N
 
 		if config.same_missing_across_outputs and dataset.output_ids is not None:
-			raise ValueError("Cannot share missingness across outputs when they do not share input "
-							"locations. Set `same_missing_across_outputs=False`, or generate the "
-							"dataset with `isotopic_output_in_tasks=True`.")
+			raise ValueError(
+				"Cannot share missingness across outputs when they do not share input "
+				"locations. Set `same_missing_across_outputs=False`, or generate the "
+				"dataset with `isotopic_output_in_tasks=True`."
+			)
 
 		# 1: random remove_mask, shape (T, O, N, C). "Which k of N points are removed" is drawn without
 		# replacement by ranking iid uniform scores per row and keeping the k lowest ranks: no python loop,
@@ -617,18 +647,28 @@ class RandomDataRemover(AbstractDataRemover):
 		shape = (T, o, N) if config.same_missing_across_channels else (T, o, C, N)
 		key_scores, key_counts = jr.split(key)
 		ranks = jnp.argsort(jnp.argsort(jr.uniform(key_scores, shape), axis=-1), axis=-1)
-		counts = jr.randint(key_counts, shape[:-1], 0, config.max_missing + 1) if config.random_missing_count \
+		counts = (
+			jr.randint(key_counts, shape[:-1], 0, config.max_missing + 1)
+			if config.random_missing_count
 			else jnp.full(shape[:-1], config.max_missing)
+		)
 		selected = ranks < counts[..., None]  # shape (T, o, N) or (T, o, C, N)
 
-		selected = selected[..., None] if config.same_missing_across_channels \
-			else jnp.moveaxis(selected, -2, -1)  # (T, o, C, N) -> (T, o, N, C)
+		selected = (
+			selected[..., None] if config.same_missing_across_channels else jnp.moveaxis(selected, -2, -1)
+		)  # (T, o, C, N) -> (T, o, N, C)
 		remove_mask = jnp.broadcast_to(selected, (T, O, N, C)).reshape(T, ON, C)
 
 		# 2: remove outputs (and known noise, if any) in one line
 		outputs = jnp.where(remove_mask, jnp.nan, dataset.outputs)
-		outputs_known_noise = None if dataset.known_output_noise is None \
-			else jnp.where(remove_mask, jnp.nan, dataset.known_output_noise)
+		outputs_known_noise = (
+			None if dataset.known_output_noise is None else jnp.where(remove_mask, jnp.nan, dataset.known_output_noise)
+		)
 
-		dataset = Dataset(inputs=dataset.inputs, outputs=outputs, known_output_noise=outputs_known_noise, output_ids=dataset.output_ids)
+		dataset = Dataset(
+			inputs=dataset.inputs,
+			outputs=outputs,
+			known_output_noise=outputs_known_noise,
+			output_ids=dataset.output_ids,
+		)
 		return (dataset, grid) if grid is not None else dataset

@@ -23,237 +23,264 @@ __all__ = ["AbstractModel", "BasicModel"]
 
 
 class AbstractModel(eqx.Module):
-    """
-    Base class for models exposing a `fit`/`predict` interface.
-    """
-    @abstractmethod
-    def fit(self, *args, **kwargs):
-        """
-        Fit the model's parameters and mixture to a Dataset.
-        """
-        pass
+	"""
+	Base class for models exposing a `fit`/`predict` interface.
+	"""
 
-    @abstractmethod
-    def predict(self, *args, **kwargs):
-        """
-        Predict outputs at the grid points for a fitted model.
-        """
-        pass
+	@abstractmethod
+	def fit(self, *args, **kwargs):
+		"""
+		Fit the model's parameters and mixture to a Dataset.
+		"""
+		pass
+
+	@abstractmethod
+	def predict(self, *args, **kwargs):
+		"""
+		Predict outputs at the grid points for a fitted model.
+		"""
+		pass
 
 
 class BasicModel(AbstractModel):
-    """
-    Default model pipeline: k-means mixture initialisation, LBFGS-optimised cluster and task
-    hyperparameters.
+	"""
+	Default model pipeline: k-means mixture initialisation, LBFGS-optimised cluster and task
+	hyperparameters.
 
-    Unlike grid construction (see `mimosa.grid.GridBuilder`), every step here is jit-compatible, so
-    `fit`/`predict` are jitted end-to-end. The `Grid` itself is a required argument rather than an
-    attribute: building it (e.g. via `mimosa.grid.UnionGrid`) isn't always jit-compatible, so it must
-    be computed by the caller outside of `fit`/`predict`.
+	Unlike grid construction (see `mimosa.grid.GridBuilder`), every step here is jit-compatible, so
+	`fit`/`predict` are jitted end-to-end. The `Grid` itself is a required argument rather than an
+	attribute: building it (e.g. via `mimosa.grid.UnionGrid`) isn't always jit-compatible, so it must
+	be computed by the caller outside of `fit`/`predict`.
 
-    Attributes
-    ----------
-    mixture_initialiser
-        Initialises the tasks' mixture responsibilities.
-    mixture_updater
-        Updates the tasks' mixture responsibilities during fitting.
-    hyperpost
-        Computes the hyperposterior over each mean-process's values at the grid points.
-    cluster_nll
-        Negative log-likelihood used to optimise the cluster mean and kernel hyperparameters.
-    task_nll
-        Negative log-likelihood used to optimise the task and noise kernel hyperparameters.
-    cluster_optimiser
-        Optimiser for the cluster mean and kernel hyperparameters.
-    task_optimiser
-        Optimiser for the task and noise kernel hyperparameters.
-    predictor
-        Computes predictions from a fitted model: `mimosa.prediction.FunctionPredictor` for the
-        latent function, `mimosa.prediction.ObservationPredictor` to include observation noise.
-    jitter
-        Diagonal jitter added before Cholesky factorizations, for numerical stability.
-    """
-    mixture_initialiser: MixtureInitialiser
-    mixture_updater: MixtureUpdater
-    hyperpost: Hyperpost
-    cluster_nll: ClusterNLL
-    task_nll: TaskNLL
-    cluster_optimiser: ClusterOptimiser
-    task_optimiser: TaskOptimiser
-    predictor: Predictor
-    jitter: Array
+	Attributes
+	----------
+	mixture_initialiser
+		Initialises the tasks' mixture responsibilities.
+	mixture_updater
+		Updates the tasks' mixture responsibilities during fitting.
+	hyperpost
+		Computes the hyperposterior over each mean-process's values at the grid points.
+	cluster_nll
+		Negative log-likelihood used to optimise the cluster mean and kernel hyperparameters.
+	task_nll
+		Negative log-likelihood used to optimise the task and noise kernel hyperparameters.
+	cluster_optimiser
+		Optimiser for the cluster mean and kernel hyperparameters.
+	task_optimiser
+		Optimiser for the task and noise kernel hyperparameters.
+	predictor
+		Computes predictions from a fitted model: `mimosa.prediction.FunctionPredictor` for the
+		latent function, `mimosa.prediction.ObservationPredictor` to include observation noise.
+	jitter
+		Diagonal jitter added before Cholesky factorizations, for numerical stability.
+	"""
 
-    def __init__(self, prng_key: Array, n_clusters: int, jitter: Array = DEFAULT_JITTER,
-                 n_outputs: int = 1, predictor: Predictor = FunctionPredictor()):
-        """
-        Parameters
-        ----------
-        prng_key
-            `jax.random` PRNG key, used to initialise the mixture via k-means++.
-        n_clusters
-            Number of mean-processes in the mixture.
-        jitter
-            Diagonal jitter added before Cholesky factorizations, for numerical stability.
-        n_outputs
-            Number of correlated outputs, used only by the k-means mixture initialisation, which
-            summarises each task per output rather than pooling them. Only needed when the outputs
-            do *not* share their input locations (`dataset.output_ids is not None`); otherwise the
-            count is read off the Dataset's shapes. See `mimosa.mixture.KMeansMixtureInitialiser`.
-        predictor
-            Whether `predict` returns the latent function (`FunctionPredictor`, the default) or an
-            observation of it, including observation noise (`ObservationPredictor`).
-        """
-        self.mixture_initialiser = KMeansMixtureInitialiser(prng_key, n_clusters, n_outputs)
-        self.mixture_updater = MixtureUpdater()
-        self.hyperpost = Hyperpost()
-        self.cluster_nll = ClusterNLL()
-        self.task_nll = TaskNLL()
-        self.cluster_optimiser = ClusterOptimiser(
-            solver=optx.LBFGS(atol=1e-3, rtol=1e-3),
-            nll=self.cluster_nll,
-        )
-        self.task_optimiser = TaskOptimiser(
-            solver=optx.LBFGS(atol=1e-3, rtol=1e-3),
-            nll=self.task_nll,
-        )
-        self.predictor = predictor
-        self.jitter = jitter
+	mixture_initialiser: MixtureInitialiser
+	mixture_updater: MixtureUpdater
+	hyperpost: Hyperpost
+	cluster_nll: ClusterNLL
+	task_nll: TaskNLL
+	cluster_optimiser: ClusterOptimiser
+	task_optimiser: TaskOptimiser
+	predictor: Predictor
+	jitter: Array
 
-    @eqx.filter_jit
-    def fit(self, dataset: Dataset, grid: Grid, parameters: Parameters,
-            init_hyperposterior: Hyperposterior|None = None, init_mixture: Mixture|None = None,
-            freeze_hyperposterior: bool = False, freeze_mixture: bool = False,
-            freeze_cluster_parameters: bool = False, freeze_task_parameters: bool = False,
-            n_iter: int = 50) -> tuple[Hyperposterior, Mixture, Parameters]:
-        """
-        Fit the model's cluster/task hyperparameters and mixture responsibilities to a Dataset.
+	def __init__(
+		self,
+		prng_key: Array,
+		n_clusters: int,
+		jitter: Array = DEFAULT_JITTER,
+		n_outputs: int = 1,
+		predictor: Predictor = FunctionPredictor(),
+	):
+		"""
+		Parameters
+		----------
+		prng_key
+			`jax.random` PRNG key, used to initialise the mixture via k-means++.
+		n_clusters
+			Number of mean-processes in the mixture.
+		jitter
+			Diagonal jitter added before Cholesky factorizations, for numerical stability.
+		n_outputs
+			Number of correlated outputs, used only by the k-means mixture initialisation, which
+			summarises each task per output rather than pooling them. Only needed when the outputs
+			do *not* share their input locations (`dataset.output_ids is not None`); otherwise the
+			count is read off the Dataset's shapes. See `mimosa.mixture.KMeansMixtureInitialiser`.
+		predictor
+			Whether `predict` returns the latent function (`FunctionPredictor`, the default) or an
+			observation of it, including observation noise (`ObservationPredictor`).
+		"""
+		self.mixture_initialiser = KMeansMixtureInitialiser(prng_key, n_clusters, n_outputs)
+		self.mixture_updater = MixtureUpdater()
+		self.hyperpost = Hyperpost()
+		self.cluster_nll = ClusterNLL()
+		self.task_nll = TaskNLL()
+		self.cluster_optimiser = ClusterOptimiser(
+			solver=optx.LBFGS(atol=1e-3, rtol=1e-3),
+			nll=self.cluster_nll,
+		)
+		self.task_optimiser = TaskOptimiser(
+			solver=optx.LBFGS(atol=1e-3, rtol=1e-3),
+			nll=self.task_nll,
+		)
+		self.predictor = predictor
+		self.jitter = jitter
 
-        Initialises the mixture and hyperposterior, then alternates, for `n_iter` iterations:
-        1) optimising the parameters (M-step)
-        2) computing the hyperposterior (E-step)
-        3) updating the mixture (E-step)
+	@eqx.filter_jit
+	def fit(
+		self,
+		dataset: Dataset,
+		grid: Grid,
+		parameters: Parameters,
+		init_hyperposterior: Hyperposterior | None = None,
+		init_mixture: Mixture | None = None,
+		freeze_hyperposterior: bool = False,
+		freeze_mixture: bool = False,
+		freeze_cluster_parameters: bool = False,
+		freeze_task_parameters: bool = False,
+		n_iter: int = 50,
+	) -> tuple[Hyperposterior, Mixture, Parameters]:
+		"""
+		Fit the model's cluster/task hyperparameters and mixture responsibilities to a Dataset.
 
-        It starts on the M-step as the pre-loop initialisation already acts like a first E-step.
+		Initialises the mixture and hyperposterior, then alternates, for `n_iter` iterations:
+		1) optimising the parameters (M-step)
+		2) computing the hyperposterior (E-step)
+		3) updating the mixture (E-step)
 
-        Parameters
-        ----------
-        dataset
-            Dataset to fit the model to.
-        grid
-            Grid of points and mappings of `dataset`'s inputs onto it, e.g. from
-            `mimosa.grid.UnionGrid`.
-        parameters
-            Initial model parameters (mean, kernels).
-        init_hyperposterior
-            Hyperposterior to start from. Defaults to computing one from the initial mixture and
-            `parameters`. Required when `freeze_hyperposterior` is True.
-        init_mixture
-            Mixture to start from. Defaults to `mixture_initialiser` (k-means), or, when
-            `init_hyperposterior` is given, to one E-step against it from uniform proportions.
-        freeze_hyperposterior
-            Keep `init_hyperposterior` fixed for the whole fit, skipping the E-step's hyperposterior
-            update.
-        freeze_mixture
-            Keep the initial mixture fixed for the whole fit.
-        freeze_cluster_parameters
-            Keep `parameters.cluster_mean` and `parameters.cluster_kernel` fixed.
-        freeze_task_parameters
-            Keep `parameters.task_kernel` and `parameters.noise_kernel` fixed.
-        n_iter
-            Number of fitting iterations.
+		It starts on the M-step as the pre-loop initialisation already acts like a first E-step.
 
-        Returns
-        -------
-        hyperposterior
-            Fitted hyperposterior, consistent with the returned parameters.
-        mixture
-            Fitted mixture.
-        parameters
-            Fitted model parameters.
-        """
-        if freeze_hyperposterior and init_hyperposterior is None:
-            raise ValueError("Must specify `init_hyperposterior` if `freeze_hyperposterior` is True.")
+		Parameters
+		----------
+		dataset
+			Dataset to fit the model to.
+		grid
+			Grid of points and mappings of `dataset`'s inputs onto it, e.g. from
+			`mimosa.grid.UnionGrid`.
+		parameters
+			Initial model parameters (mean, kernels).
+		init_hyperposterior
+			Hyperposterior to start from. Defaults to computing one from the initial mixture and
+			`parameters`. Required when `freeze_hyperposterior` is True.
+		init_mixture
+			Mixture to start from. Defaults to `mixture_initialiser` (k-means), or, when
+			`init_hyperposterior` is given, to one E-step against it from uniform proportions.
+		freeze_hyperposterior
+			Keep `init_hyperposterior` fixed for the whole fit, skipping the E-step's hyperposterior
+			update.
+		freeze_mixture
+			Keep the initial mixture fixed for the whole fit.
+		freeze_cluster_parameters
+			Keep `parameters.cluster_mean` and `parameters.cluster_kernel` fixed.
+		freeze_task_parameters
+			Keep `parameters.task_kernel` and `parameters.noise_kernel` fixed.
+		n_iter
+			Number of fitting iterations.
 
-        if init_mixture is not None:
-            mixture = init_mixture
-        elif init_hyperposterior is not None:
-            T, K = len(dataset.outputs), self.mixture_initialiser.n_clusters
-            mixture = self.mixture_updater(
-                dataset,
-                grid,
-                parameters.task_kernel + parameters.noise_kernel,
-                init_hyperposterior,
-                Mixture(responsibilities=jnp.ones((T, K)) / K),  # Only for uniform mixture proportions
-                jitter=self.jitter)
-        else:
-            mixture = self.mixture_initialiser(dataset)
+		Returns
+		-------
+		hyperposterior
+			Fitted hyperposterior, consistent with the returned parameters.
+		mixture
+			Fitted mixture.
+		parameters
+			Fitted model parameters.
+		"""
+		if freeze_hyperposterior and init_hyperposterior is None:
+			raise ValueError("Must specify `init_hyperposterior` if `freeze_hyperposterior` is True.")
 
-        if init_hyperposterior is not None:
-            hyperposterior = init_hyperposterior
-        else:
-            hyperposterior = self.hyperpost(
-                    dataset, grid, mixture, parameters, jitter=self.jitter)
+		if init_mixture is not None:
+			mixture = init_mixture
+		elif init_hyperposterior is not None:
+			T, K = len(dataset.outputs), self.mixture_initialiser.n_clusters
+			mixture = self.mixture_updater(
+				dataset,
+				grid,
+				parameters.task_kernel + parameters.noise_kernel,
+				init_hyperposterior,
+				Mixture(responsibilities=jnp.ones((T, K)) / K),  # Only for uniform mixture proportions
+				jitter=self.jitter,
+			)
+		else:
+			mixture = self.mixture_initialiser(dataset)
 
-        @loop_tqdm(n_iter, desc=f"Training model for {n_iter} iterations:")
-        def step(i, args):
-            hyperposterior, mixture, parameters = args
+		if init_hyperposterior is not None:
+			hyperposterior = init_hyperposterior
+		else:
+			hyperposterior = self.hyperpost(dataset, grid, mixture, parameters, jitter=self.jitter)
 
-            # As init is basically a preliminary e-step, we start with the m-step
-            # --- M-step ---
-            # Seeded from the carry, so a frozen half keeps its incoming value.
-            cluster_mean, cluster_kernel = parameters.cluster_mean, parameters.cluster_kernel
-            task_kernel, noise_kernel = parameters.task_kernel, parameters.noise_kernel
+		@loop_tqdm(n_iter, desc=f"Training model for {n_iter} iterations:")
+		def step(i, args):
+			hyperposterior, mixture, parameters = args
 
-            if not freeze_cluster_parameters:
-                cluster_mean, cluster_kernel = self.cluster_optimiser(
-                    parameters.cluster_mean, parameters.cluster_kernel,
-                    hyperposterior, grid, jitter=self.jitter).value
+			# As init is basically a preliminary e-step, we start with the m-step
+			# --- M-step ---
+			# Seeded from the carry, so a frozen half keeps its incoming value.
+			cluster_mean, cluster_kernel = parameters.cluster_mean, parameters.cluster_kernel
+			task_kernel, noise_kernel = parameters.task_kernel, parameters.noise_kernel
 
-            if not freeze_task_parameters:
-                optim_task = self.task_optimiser(
-                    parameters.task_kernel + parameters.noise_kernel,
-                    dataset, grid, hyperposterior, mixture, jitter=self.jitter).value
-                task_kernel, noise_kernel = optim_task.left, optim_task.right
+			if not freeze_cluster_parameters:
+				cluster_mean, cluster_kernel = self.cluster_optimiser(
+					parameters.cluster_mean, parameters.cluster_kernel, hyperposterior, grid, jitter=self.jitter
+				).value
 
-            parameters = Parameters(
-                cluster_mean=cluster_mean, cluster_kernel=cluster_kernel,
-                task_kernel=task_kernel, noise_kernel=noise_kernel)
+			if not freeze_task_parameters:
+				optim_task = self.task_optimiser(
+					parameters.task_kernel + parameters.noise_kernel,
+					dataset,
+					grid,
+					hyperposterior,
+					mixture,
+					jitter=self.jitter,
+				).value
+				task_kernel, noise_kernel = optim_task.left, optim_task.right
 
-            # --- E-step ---
-            if not freeze_hyperposterior:
-                hyperposterior = self.hyperpost(
-                    dataset, grid, mixture, parameters, jitter=self.jitter)
+			parameters = Parameters(
+				cluster_mean=cluster_mean,
+				cluster_kernel=cluster_kernel,
+				task_kernel=task_kernel,
+				noise_kernel=noise_kernel,
+			)
 
-            if not freeze_mixture:
-                mixture = self.mixture_updater(
-                        dataset, grid, parameters.task_kernel + parameters.noise_kernel,
-                        hyperposterior, mixture, jitter=self.jitter)
+			# --- E-step ---
+			if not freeze_hyperposterior:
+				hyperposterior = self.hyperpost(dataset, grid, mixture, parameters, jitter=self.jitter)
 
-            return hyperposterior, mixture, parameters
+			if not freeze_mixture:
+				mixture = self.mixture_updater(
+					dataset,
+					grid,
+					parameters.task_kernel + parameters.noise_kernel,
+					hyperposterior,
+					mixture,
+					jitter=self.jitter,
+				)
 
-        return jax.lax.fori_loop(0, n_iter, step, (hyperposterior, mixture, parameters))
+			return hyperposterior, mixture, parameters
 
+		return jax.lax.fori_loop(0, n_iter, step, (hyperposterior, mixture, parameters))
 
-    @eqx.filter_jit
-    def predict(self, dataset: Dataset, grid: Grid, mixture: Mixture, parameters: Parameters) -> MultivariateNormal:
-        """
-        Predict outputs at the grid points, for a fitted model.
+	@eqx.filter_jit
+	def predict(self, dataset: Dataset, grid: Grid, mixture: Mixture, parameters: Parameters) -> MultivariateNormal:
+		"""
+		Predict outputs at the grid points, for a fitted model.
 
-        Parameters
-        ----------
-        dataset
-            Dataset to condition predictions on.
-        grid
-            Grid of points and mappings of `dataset`'s inputs onto it, e.g. from
-            `mimosa.grid.UnionGrid`.
-        mixture
-            Fitted mixture.
-        parameters
-            Fitted model parameters.
+		Parameters
+		----------
+		dataset
+			Dataset to condition predictions on.
+		grid
+			Grid of points and mappings of `dataset`'s inputs onto it, e.g. from
+			`mimosa.grid.UnionGrid`.
+		mixture
+			Fitted mixture.
+		parameters
+			Fitted model parameters.
 
-        Returns
-        -------
-        Predicted distribution over each task's outputs at the grid points, for every mean-process.
-        """
-        hyperposterior = self.hyperpost(dataset, grid, mixture, parameters, jitter=self.jitter)
-        return self.predictor(dataset, grid, hyperposterior, parameters, jitter=self.jitter)
+		Returns
+		-------
+		Predicted distribution over each task's outputs at the grid points, for every mean-process.
+		"""
+		hyperposterior = self.hyperpost(dataset, grid, mixture, parameters, jitter=self.jitter)
+		return self.predictor(dataset, grid, hyperposterior, parameters, jitter=self.jitter)

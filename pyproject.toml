@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mimosa-ml"
-version = "v0.3.0-alpha"
+version = "v0.4.0-alpha"
 description = "MIMOSA: Multi-Input Multi-Output Sample Analysis - A fully-featured multi-task Gaussian process framework for analysing functional data."
 readme = "README.md"
 license = "MIT"
@@ -17,35 +17,54 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
 ]
+# Floors are the versions resolved on the oldest supported interpreter (3.10), which is the
+# configuration `docs/examples/basic_example.py` is smoke-tested against in CI. jax 0.6.2 is the
+# last release supporting 3.10, so it sets the floor for the whole jax stack.
 dependencies = [
-    "jax",
-    "equinox",
-    "optimistix",
+    "jax>=0.6.2",
+    "equinox>=0.13.8",
+    "optimistix>=0.0.11",
     "kernax-ml>=0.7.5a0",
-    "matplotlib",
-    "polars",
-    "numpy",
-    "beartype",
-    "jaxtyping",
-    "jax-tqdm",
+    "matplotlib>=3.10.9",
+    "polars>=1.44.1",
+    "numpy>=2.2.6",
+    "beartype>=0.22.9",
+    "jaxtyping>=0.3.7",
+    "jax-tqdm>=0.4.0",
 ]
 
 [project.urls]
-Homepage = "https://github.com/SimLej18/mimosa"
+Homepage = "https://github.com/SimLej18/mimosa-ml"
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "pytest",
-    "pre-commit"
+    "pre-commit",
 ]
 
 docs = [
     "jupytext",
     "sphinx",
     "myst-nb",
+    "jupyter-cache",
     "sphinx-book-theme",
     "sphinx-togglebutton",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["mimosa"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+# Pinned rather than left to ruff's default, which is broad enough to reorder every import block
+# (I001) and sort every `__all__` (RUF022), losing the grouping those are written in.
+select = ["E4", "E7", "E9", "F"]
+ignore = [
+	"F722", "F821",  # jaxtyping shape annotations ("T ON C") are not Python expressions
+	"E741",          # `I` and `O` are the package's input/output dimension names (see `Dimensions`)
+]
+
+[tool.ruff.format]
+indent-style = "tab"

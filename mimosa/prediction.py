@@ -11,20 +11,34 @@ from jax import vmap, Array
 import equinox as eqx
 
 from mimosa.linalg import cho_factor
-from mimosa.data_structures import (Parameters, Dataset, Grid, Hyperposterior, PredictionMeanBlocks,
-                                    PredictionCovBlocks, MultivariateNormal)
+from mimosa.data_structures import (
+	Parameters,
+	Dataset,
+	Grid,
+	Hyperposterior,
+	PredictionMeanBlocks,
+	PredictionCovBlocks,
+	MultivariateNormal,
+)
 from mimosa.constants import DEFAULT_JITTER
 
 __all__ = [
-	"predict_task_channel", "predict_task_in_cluster", "predict_clusters", "predict", "Predictor",
-	"FunctionPredictor", "ObservationPredictor"
+	"predict_task_channel",
+	"predict_task_in_cluster",
+	"predict_clusters",
+	"predict",
+	"Predictor",
+	"FunctionPredictor",
+	"ObservationPredictor",
 ]
 
 
-def predict_task_channel(output_obs: Array,
-                        post_mean_blocks: PredictionMeanBlocks,
-                        cov_blocks: PredictionCovBlocks,
-                        jitter: Array = DEFAULT_JITTER) -> MultivariateNormal:
+def predict_task_channel(
+	output_obs: Array,
+	post_mean_blocks: PredictionMeanBlocks,
+	cov_blocks: PredictionCovBlocks,
+	jitter: Array = DEFAULT_JITTER,
+) -> MultivariateNormal:
 	"""
 	Predict a single task's channel at the grid points, under a single mean-process, by GP
 	conditioning on the task's observed values.
@@ -51,13 +65,13 @@ def predict_task_channel(output_obs: Array,
 	padding_mask_2D = padding_mask_1D & padding_mask_1D.T
 
 	gamma_obs = jnp.where(padding_mask_2D, cov_blocks.cov_obs, jnp.eye(len(cov_blocks.cov_obs)))
-	gamma_crossed = jnp.where(padding_mask_1D, cov_blocks.cov_crossed, 0.)
+	gamma_crossed = jnp.where(padding_mask_1D, cov_blocks.cov_crossed, 0.0)
 
 	L = cho_factor(gamma_obs, jitter=jitter)
 	z = lax.linalg.triangular_solve(L, gamma_crossed, left_side=True, lower=True)
-	y = \
-	lax.linalg.triangular_solve(L, (jnp.nan_to_num(output_obs) - post_mean_blocks.mean_obs)[:, None], left_side=True,
-	                            lower=True)[:, 0]
+	y = lax.linalg.triangular_solve(
+		L, (jnp.nan_to_num(output_obs) - post_mean_blocks.mean_obs)[:, None], left_side=True, lower=True
+	)[:, 0]
 
 	pred_mean = post_mean_blocks.mean_grid + (z.T @ y)
 	pred_cov = cov_blocks.cov_grid - (z.T @ z)
@@ -65,10 +79,12 @@ def predict_task_channel(output_obs: Array,
 	return MultivariateNormal(mean=pred_mean, covariance=pred_cov)
 
 
-def predict_task_in_cluster(output_obs: Array,
-                            post_mean_blocks: PredictionMeanBlocks,
-                            cov_blocks: PredictionCovBlocks,
-                            jitter: Array = DEFAULT_JITTER) -> MultivariateNormal:
+def predict_task_in_cluster(
+	output_obs: Array,
+	post_mean_blocks: PredictionMeanBlocks,
+	cov_blocks: PredictionCovBlocks,
+	jitter: Array = DEFAULT_JITTER,
+) -> MultivariateNormal:
 	"""
 	Predict a single task's channels at the grid points, under a single mean-process, vmapped
 	across channels.
@@ -93,22 +109,20 @@ def predict_task_in_cluster(output_obs: Array,
 	Predicted distribution over this task's channels at the grid points, batched over channel dimensions.
 	"""
 	if cov_blocks.cov_obs.shape[0] == 1:
-		return (vmap(
-			predict_task_channel,
-			in_axes=(0, 0, None, None))
-		        (output_obs.T, post_mean_blocks, cov_blocks[0], jitter))
+		return vmap(predict_task_channel, in_axes=(0, 0, None, None))(
+			output_obs.T, post_mean_blocks, cov_blocks[0], jitter
+		)
 	else:
-		return (vmap(
-			predict_task_channel,
-			in_axes=(0, 0, 0, None))
-		        (output_obs.T, post_mean_blocks, cov_blocks, jitter))
+		return vmap(predict_task_channel, in_axes=(0, 0, 0, None))(output_obs.T, post_mean_blocks, cov_blocks, jitter)
 
 
-def predict_clusters(task_outputs: Array,
-                     mappings: Array,
-                     hyperposterior: Hyperposterior,
-                     task_cov_blocks: PredictionCovBlocks,
-                     jitter: Array = DEFAULT_JITTER) -> MultivariateNormal:
+def predict_clusters(
+	task_outputs: Array,
+	mappings: Array,
+	hyperposterior: Hyperposterior,
+	task_cov_blocks: PredictionCovBlocks,
+	jitter: Array = DEFAULT_JITTER,
+) -> MultivariateNormal:
 	"""
 	Predict a single task's outputs at the grid points, under every mean-process, vmapped across
 	mean-processes.
@@ -139,23 +153,16 @@ def predict_clusters(task_outputs: Array,
 	cov_blocks = PredictionCovBlocks(
 		cov_obs=post_obs.covariance + task_cov_blocks.cov_obs,
 		cov_grid=hyperposterior.covariance + task_cov_blocks.cov_grid,
-		cov_crossed=hyperposterior.cross_covariance(mappings) + task_cov_blocks.cov_crossed
+		cov_crossed=hyperposterior.cross_covariance(mappings) + task_cov_blocks.cov_crossed,
 	)
 
-	post_mean_blocks = PredictionMeanBlocks(
-		mean_obs=post_obs.mean,
-		mean_grid=hyperposterior.mean
-	)
+	post_mean_blocks = PredictionMeanBlocks(mean_obs=post_obs.mean, mean_grid=hyperposterior.mean)
 
 	if cov_blocks.cov_obs.shape[0] == 1:
-		return vmap(
-			predict_task_in_cluster,
-			in_axes=(None, 0, None, None)
-		)(task_outputs, post_mean_blocks, cov_blocks[0], jitter)
-	return vmap(
-		predict_task_in_cluster,
-		in_axes=(None, 0, 0, None)
-	)(task_outputs, post_mean_blocks, cov_blocks, jitter)
+		return vmap(predict_task_in_cluster, in_axes=(None, 0, None, None))(
+			task_outputs, post_mean_blocks, cov_blocks[0], jitter
+		)
+	return vmap(predict_task_in_cluster, in_axes=(None, 0, 0, None))(task_outputs, post_mean_blocks, cov_blocks, jitter)
 
 
 def _cross_grid(grid: Grid, output_ids: None | Array) -> tuple[Array, None | Array]:
@@ -187,12 +194,14 @@ def _cross_grid(grid: Grid, output_ids: None | Array) -> tuple[Array, None | Arr
 	return points, ids
 
 
-def predict(dataset: Dataset,
-            grid: Grid,
-            hyperposterior: Hyperposterior,
-            parameters: Parameters,
-            noisy: bool = False,
-            jitter: Array = DEFAULT_JITTER) -> MultivariateNormal:
+def predict(
+	dataset: Dataset,
+	grid: Grid,
+	hyperposterior: Hyperposterior,
+	parameters: Parameters,
+	noisy: bool = False,
+	jitter: Array = DEFAULT_JITTER,
+) -> MultivariateNormal:
 	"""
 	Predict every task's outputs at the grid points, under every mean-process.
 
@@ -237,27 +246,38 @@ def predict(dataset: Dataset,
 
 		task_cov_blocks = PredictionCovBlocks(
 			cov_obs=parameters.task_kernel(dataset.clean_inputs[0], output_ids=output_ids)
-			        + parameters.noise_kernel(dataset.clean_inputs[0], output_ids=output_ids),
+			+ parameters.noise_kernel(dataset.clean_inputs[0], output_ids=output_ids),
 			cov_grid=parameters.task_kernel(extended_grid, output_ids=grid.output_ids)
-			         + (parameters.noise_kernel(extended_grid, output_ids=grid.output_ids) if noisy else 0.),
-			cov_crossed=parameters.task_kernel(dataset.clean_inputs[0], cross_points, output_ids=output_ids, output_ids2=cross_ids),
+			+ (parameters.noise_kernel(extended_grid, output_ids=grid.output_ids) if noisy else 0.0),
+			cov_crossed=parameters.task_kernel(
+				dataset.clean_inputs[0], cross_points, output_ids=output_ids, output_ids2=cross_ids
+			),
 		)
 	else:
 		extended_grid = jnp.broadcast_to(grid.points, dataset.inputs.shape[:1] + grid.points.shape)
 		extended_cross_points = jnp.broadcast_to(cross_points, dataset.inputs.shape[:1] + cross_points.shape)
 		# extended_grid/extended_cross_points gain a leading T axis, so any output_ids passed
 		# alongside them must too.
-		extended_grid_ids = None if grid.output_ids is None \
+		extended_grid_ids = (
+			None
+			if grid.output_ids is None
 			else jnp.broadcast_to(grid.output_ids, dataset.inputs.shape[:1] + grid.output_ids.shape)
-		extended_cross_ids = None if cross_ids is None \
-			else jnp.broadcast_to(cross_ids, dataset.inputs.shape[:1] + cross_ids.shape)
+		)
+		extended_cross_ids = (
+			None if cross_ids is None else jnp.broadcast_to(cross_ids, dataset.inputs.shape[:1] + cross_ids.shape)
+		)
 
 		task_cov_blocks = PredictionCovBlocks(
 			cov_obs=parameters.task_kernel(dataset.clean_inputs, output_ids=dataset.output_ids)
-			        + parameters.noise_kernel(dataset.clean_inputs, output_ids=dataset.output_ids),
+			+ parameters.noise_kernel(dataset.clean_inputs, output_ids=dataset.output_ids),
 			cov_grid=parameters.task_kernel(extended_grid, output_ids=extended_grid_ids)
-			         + (parameters.noise_kernel(extended_grid, output_ids=extended_grid_ids) if noisy else 0.),
-			cov_crossed=parameters.task_kernel(dataset.clean_inputs, extended_cross_points, output_ids=dataset.output_ids, output_ids2=extended_cross_ids),
+			+ (parameters.noise_kernel(extended_grid, output_ids=extended_grid_ids) if noisy else 0.0),
+			cov_crossed=parameters.task_kernel(
+				dataset.clean_inputs,
+				extended_cross_points,
+				output_ids=dataset.output_ids,
+				output_ids2=extended_cross_ids,
+			),
 		)
 
 	mappings = grid.mappings[0] if dataset.inputs.shape[0] == 1 else grid.mappings
@@ -266,16 +286,8 @@ def predict(dataset: Dataset,
 
 	return vmap(
 		predict_clusters,
-		in_axes=(0,
-		         0 if mappings.ndim == 2 else None,
-		         None,
-		         task_cov_axes,
-		         None),
-	)(dataset.outputs,
-	  mappings,
-	  hyperposterior,
-	  task_cov_blocks,
-	  jitter)
+		in_axes=(0, 0 if mappings.ndim == 2 else None, None, task_cov_axes, None),
+	)(dataset.outputs, mappings, hyperposterior, task_cov_blocks, jitter)
 
 
 class Predictor(eqx.Module):
@@ -285,6 +297,7 @@ class Predictor(eqx.Module):
 	Subclasses set `noisy`, which selects what is predicted: the latent function, or an observation
 	of it at the predicted points.
 	"""
+
 	@property
 	@abstractmethod
 	def noisy(self) -> bool:
@@ -292,11 +305,14 @@ class Predictor(eqx.Module):
 		Whether the prediction includes observation noise at the predicted points. See `predict`.
 		"""
 
-	def __call__(self, dataset: Dataset,
-	             grid: Grid,
-	             hyperposterior: Hyperposterior,
-	             parameters: Parameters,
-	             jitter: Array = DEFAULT_JITTER) -> MultivariateNormal:
+	def __call__(
+		self,
+		dataset: Dataset,
+		grid: Grid,
+		hyperposterior: Hyperposterior,
+		parameters: Parameters,
+		jitter: Array = DEFAULT_JITTER,
+	) -> MultivariateNormal:
 		"""
 		See `predict`.
 		"""
@@ -310,6 +326,7 @@ class FunctionPredictor(Predictor):
 	As we predict the *function*, prediction doesn't include noise at predicted points, conditioned
 	on noisy observations.
 	"""
+
 	noisy = False
 
 
@@ -322,4 +339,5 @@ class ObservationPredictor(Predictor):
 
 	Will not work with an `InputSpecificParamModule` in `noise_kernel`.
 	"""
+
 	noisy = True

@@ -12,8 +12,15 @@ from jax.lax import fori_loop
 from mimosa.constants import DEFAULT_JITTER, PAD_INDEX
 
 __all__ = [
-	"cho_factor", "cho_solve", "searchsorted_2d", "searchsorted_2d_vectorised", "lexicographic_sort",
-	"find_exact_mappings", "sq_dists", "find_nearest_mappings", "mapping_distances"
+	"cho_factor",
+	"cho_solve",
+	"searchsorted_2d",
+	"searchsorted_2d_vectorised",
+	"lexicographic_sort",
+	"find_exact_mappings",
+	"sq_dists",
+	"find_nearest_mappings",
+	"mapping_distances",
 ]
 
 
@@ -208,7 +215,7 @@ def find_nearest_mappings(grid: Array, points: Array, chunk_size: None | int = N
 	chunks = padded.reshape(n_chunks, chunk_size, points.shape[-1])
 	nearest = jlx.map(lambda chunk: jnp.argmin(sq_dists(chunk, grid), axis=-1), chunks)
 	# `argmin` is per row, so a NaN point only corrupts its own index: overwriting it here is enough.
-	return jnp.where(jnp.any(jnp.isnan(points), axis=-1), PAD_INDEX, nearest.reshape(-1)[:len(points)])
+	return jnp.where(jnp.any(jnp.isnan(points), axis=-1), PAD_INDEX, nearest.reshape(-1)[: len(points)])
 
 
 def mapping_distances(grid: Array, points: Array, mappings: Array) -> Array:

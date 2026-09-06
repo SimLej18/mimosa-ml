@@ -14,9 +14,20 @@ import equinox as eqx
 from kernax import MeanLike, KernelLike
 
 __all__ = [
-	"Dimensions", "ModelConfig", "DataRemovalConfig", "validate_model_config", "Parameters", "ParameterPriors",
-	"Dataset", "Grid", "MultivariateNormal", "Hyperprior", "Hyperposterior", "Mixture", "PredictionMeanBlocks",
-	"PredictionCovBlocks"
+	"Dimensions",
+	"ModelConfig",
+	"DataRemovalConfig",
+	"validate_model_config",
+	"Parameters",
+	"ParameterPriors",
+	"Dataset",
+	"Grid",
+	"MultivariateNormal",
+	"Hyperprior",
+	"Hyperposterior",
+	"Mixture",
+	"PredictionMeanBlocks",
+	"PredictionCovBlocks",
 ]
 
 
@@ -48,6 +59,7 @@ class Dimensions:
 		If any dimension is non-positive, if there are more clusters than tasks,
 		or more points per task than in the grid.
 	"""
+
 	T: int
 	K: int
 	I: int
@@ -93,6 +105,7 @@ class ModelConfig:
 	isotopic_output_in_grid
 		If True, all outputs in the grid share the same input locations.
 	"""
+
 	shared_task_hps: bool = True
 	shared_cluster_hps: bool = True
 	shared_channel_hps: bool = True
@@ -121,6 +134,7 @@ class DataRemovalConfig:
 		True is only meaningful when outputs share input locations (`ModelConfig.isotopic_output_in_tasks`);
 		`RandomDataRemover` raises otherwise.
 	"""
+
 	max_missing: int
 	random_missing_count: bool = False
 	same_missing_across_channels: bool = True
@@ -170,6 +184,7 @@ class Parameters(eqx.Module):
 	noise_kernel
 		Covariance kernel modelling the observation noise.
 	"""
+
 	cluster_mean: MeanLike
 	cluster_kernel: KernelLike
 	task_kernel: KernelLike
@@ -193,6 +208,7 @@ class ParameterPriors:
 	noise_kernel_priors
 		Priors for the noise kernel's hyperparameters.
 	"""
+
 	cluster_mean_priors: dict
 	cluster_kernel_priors: dict
 	task_kernel_priors: dict
@@ -218,6 +234,7 @@ class Dataset(eqx.Module):
 		every task shares the same output ids (in particular, whenever `isotopic_tasks`), or
 		`(T, O*N)` if they vary per task.
 	"""
+
 	inputs: Float[Array, "#T oN I"]  # "o" is 1 if isotopic_output_in_tasks and dims.O otherwise
 	outputs: Float[Array, "T ON C"]
 	known_output_noise: None | Float[Array, "T ON C"] = None
@@ -256,9 +273,10 @@ class Grid(eqx.Module):
 		so a distribution over the grid is `n_outputs * len(points)` long; otherwise `points`
 		already holds one block per output. Defaults to `1`, a single-output grid.
 	"""
+
 	points: Float[Array, "FG I"]
 	output_ids: None | Int[Array, "FG"] = None
-	mappings:  None | Int[Array, "#T N"] = None
+	mappings: None | Int[Array, "#T N"] = None
 	n_outputs: int = eqx.field(static=True, default=1)
 
 
@@ -274,6 +292,7 @@ class MultivariateNormal(eqx.Module):
 	covariance
 		Covariance matrix.
 	"""
+
 	mean: Float[Array, "... P"]
 	covariance: Float[Array, "... P P"]
 
@@ -318,6 +337,7 @@ class Hyperprior(MultivariateNormal):
 	"""
 	Prior distribution over the mean-process values at grid points, before observing data.
 	"""
+
 	mean: Float[Array, "*B FG"]
 	covariance: Float[Array, "*B FG FG"]
 
@@ -327,6 +347,7 @@ class Hyperposterior(MultivariateNormal):
 	"""
 	Posterior distribution over the mean-process values at grid points, after observing data.
 	"""
+
 	mean: Float[Array, "*B FG"]
 	covariance: Float[Array, "*B FG FG"]
 
@@ -341,6 +362,7 @@ class Mixture(eqx.Module):
 	responsibilities
 		Probability of each task belonging to each mean-process.
 	"""
+
 	responsibilities: Float[Array, "T K"]
 
 	@property
@@ -373,6 +395,7 @@ class PredictionMeanBlocks(eqx.Module):
 	mean_grid
 		Predicted mean at the grid points.
 	"""
+
 	mean_obs: Float[Array, "*B FN"]
 	mean_grid: Float[Array, "*B FG"]
 
@@ -404,6 +427,7 @@ class PredictionCovBlocks(eqx.Module):
 	`mimosa.synthetic.known_noise_kernel` -- batches `cov_obs` along an axis the two grid blocks are
 	legitimately shared along. Mismatched sizes are still rejected.
 	"""
+
 	cov_obs: Float[Array, "#*B FN FN"]
 	cov_grid: Float[Array, "#*B FG FG"]
 	cov_crossed: Float[Array, "#*B FN FG"]
@@ -412,7 +436,9 @@ class PredictionCovBlocks(eqx.Module):
 		"""
 		Index `cov_obs`, `cov_grid` and `cov_crossed` jointly along the batch dimensions.
 		"""
-		return PredictionCovBlocks(cov_obs=self.cov_obs[item], cov_grid=self.cov_grid[item], cov_crossed=self.cov_crossed[item])
+		return PredictionCovBlocks(
+			cov_obs=self.cov_obs[item], cov_grid=self.cov_grid[item], cov_crossed=self.cov_crossed[item]
+		)
 
 	@property
 	def over_tasks(self) -> tuple["PredictionCovBlocks", "PredictionCovBlocks"]:

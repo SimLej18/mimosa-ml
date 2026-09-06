@@ -13,31 +13,52 @@ functions, internal block containers) stay in their submodule and are reached th
 `mimosa.linalg.cho_factor`, `mimosa.prediction.predict`, `mimosa.grid.GridBuilder`. Each submodule
 declares its own `__all__`; anything absent from it is private.
 """
+
 import importlib.metadata
 
 from mimosa.constants import DEFAULT_JITTER, PAD_INDEX
 from mimosa.data_structures import (
-	Dataset, Dimensions, ModelConfig, DataRemovalConfig, Parameters, ParameterPriors,
-	Grid, Mixture, Hyperprior, Hyperposterior, MultivariateNormal,
+	Dataset,
+	Dimensions,
+	ModelConfig,
+	DataRemovalConfig,
+	Parameters,
+	ParameterPriors,
+	Grid,
+	Mixture,
+	Hyperprior,
+	Hyperposterior,
+	MultivariateNormal,
 )
 from mimosa.hyperpost import one_shot_hyperpost
 from mimosa.grid import UnionGrid, RegularGrid, KMeansGrid, MultiOutputUnionGrid, MergedGrid
 from mimosa.mappings import ExactInputMapper, NearestInputMapper
 from mimosa.io import save_csv, load_csv
 from mimosa.laplace import (
-	IdentityLaplaceApproximator, BinomialLaplaceApproximator, GammaLaplaceApproximator,
-	PoissonLaplaceApproximator, ExponentialLaplaceApproximator,
+	IdentityLaplaceApproximator,
+	BinomialLaplaceApproximator,
+	PoissonLaplaceApproximator,
+	ExponentialLaplaceApproximator,
 )
 from mimosa.mixture import KMeansMixtureInitialiser
 from mimosa.models import BasicModel
 from mimosa.plot import (
-	plot_channel, plot_task, plot_dataset, plot_single_cluster_single_channel, plot_single_cluster,
-	plot_clusters, plot_single_task_prediction,
+	plot_channel,
+	plot_task,
+	plot_dataset,
+	plot_single_cluster_single_channel,
+	plot_single_cluster,
+	plot_clusters,
+	plot_single_task_prediction,
 )
 from mimosa.prediction import FunctionPredictor, ObservationPredictor
 from mimosa.sampling import sample_gp
 from mimosa.synthetic import (
-	generate_data, known_noise_kernel, build_parameters, sample_parameters_from_priors, RandomDataRemover,
+	generate_data,
+	known_noise_kernel,
+	build_parameters,
+	sample_parameters_from_priors,
+	RandomDataRemover,
 )
 
 __all__ = [
@@ -70,7 +91,6 @@ __all__ = [
 	# likelihood approximations
 	"IdentityLaplaceApproximator",
 	"BinomialLaplaceApproximator",
-	"GammaLaplaceApproximator",
 	"PoissonLaplaceApproximator",
 	"ExponentialLaplaceApproximator",
 	# models and prediction

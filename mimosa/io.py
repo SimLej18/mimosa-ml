@@ -20,8 +20,12 @@ import jax.numpy as jnp
 from mimosa.data_structures import Dataset
 
 __all__ = [
-	"save_single_csv", "split_into_single_output_datasets", "save_csv", "load_single_csv",
-	"merge_multioutput_datasets", "load_csv"
+	"save_single_csv",
+	"split_into_single_output_datasets",
+	"save_csv",
+	"load_single_csv",
+	"merge_multioutput_datasets",
+	"load_csv",
 ]
 
 
@@ -72,11 +76,14 @@ def save_single_csv(csv_path: str | Path, dataset: Dataset) -> None:
 		inputs = np.broadcast_to(np.asarray(single_output_dataset.inputs), (T, N, I)).reshape(T * N, I)
 		outputs = np.asarray(single_output_dataset.outputs).reshape(T * N, C)
 		task_ids = np.repeat(np.arange(T), N)
-		noise = None if single_output_dataset.known_output_noise is None \
+		noise = (
+			None
+			if single_output_dataset.known_output_noise is None
 			else np.asarray(single_output_dataset.known_output_noise).reshape(T * N, C)
+		)
 
 		# Padding rows (NaN on every input) are always dropped; a real point with all-NaN outputs is
-		# always kept -- it's what lets an isotopic_tasks dataset round-trip (see plan/module docs).
+		# always kept -- it's what lets an isotopic_tasks dataset round-trip.
 		keep = ~np.isnan(inputs).any(axis=-1)
 		task_ids, inputs, outputs = task_ids[keep], inputs[keep], outputs[keep]
 		if noise is not None:
@@ -100,8 +107,8 @@ def save_single_csv(csv_path: str | Path, dataset: Dataset) -> None:
 	# A full join's row order is an implementation detail, not a function of the row's own content --
 	# two tasks with the exact same input points could come out with the points in a different
 	# relative order. Sorting by the join key itself makes row order a pure function of content again,
-	# so identical tasks read back identical: load_single_csv's task-uniformity collapse (step 6)
-	# depends on this.
+	# so identical tasks read back identical: load_single_csv's task-uniformity collapse depends on
+	# this.
 	df = df.sort(key_cols)
 
 	df.write_csv(csv_path)
@@ -136,8 +143,8 @@ def split_into_single_output_datasets(dataset: Dataset) -> list[Dataset]:
 		return [
 			Dataset(
 				inputs=dataset.inputs,
-				outputs=jnp.asarray(outputs[:, o * N:(o + 1) * N, :]),
-				known_output_noise=None if known_noise is None else jnp.asarray(known_noise[:, o * N:(o + 1) * N, :]),
+				outputs=jnp.asarray(outputs[:, o * N : (o + 1) * N, :]),
+				known_output_noise=None if known_noise is None else jnp.asarray(known_noise[:, o * N : (o + 1) * N, :]),
 			)
 			for o in range(O)
 		]
@@ -164,11 +171,13 @@ def split_into_single_output_datasets(dataset: Dataset) -> list[Dataset]:
 		if known_noise is not None:
 			out_noise[task_idx, dest] = known_noise[task_idx, row_idx]
 
-		datasets.append(Dataset(
-			inputs=jnp.asarray(out_inputs),
-			outputs=jnp.asarray(out_outputs),
-			known_output_noise=None if out_noise is None else jnp.asarray(out_noise),
-		))
+		datasets.append(
+			Dataset(
+				inputs=jnp.asarray(out_inputs),
+				outputs=jnp.asarray(out_outputs),
+				known_output_noise=None if out_noise is None else jnp.asarray(out_noise),
+			)
+		)
 	return datasets
 
 
@@ -388,15 +397,17 @@ def load_single_csv(csv_path: str | Path, output_groups: Sequence | None = None)
 			out_noise = np.full((T, N_o, C), np.nan)
 			out_noise[t_o, pos_o] = noise_vals[mask, o, :]
 
-		single_output_datasets.append(Dataset(
-			inputs=jnp.asarray(out_inputs),
-			outputs=jnp.asarray(out_outputs),
-			known_output_noise=None if out_noise is None else jnp.asarray(out_noise),
-		))
+		single_output_datasets.append(
+			Dataset(
+				inputs=jnp.asarray(out_inputs),
+				outputs=jnp.asarray(out_outputs),
+				known_output_noise=None if out_noise is None else jnp.asarray(out_noise),
+			)
+		)
 
 	dataset = merge_multioutput_datasets(single_output_datasets)
 
-	# Step 6: collapse the leading task axis to 1 if every task ended up holding the exact same input
+	# Collapse the leading task axis to 1 if every task ended up holding the exact same input
 	# points. Done once, on the merged result, not per output before merging: outputs whose own points
 	# happen to be task-uniform could otherwise collapse to different leading-axis sizes and break the
 	# concatenation merge_multioutput_datasets does across outputs.
@@ -407,8 +418,10 @@ def load_single_csv(csv_path: str | Path, output_groups: Sequence | None = None)
 		if output_ids is not None and output_ids.shape[0] > 1:
 			output_ids = output_ids[:1]
 		dataset = Dataset(
-			inputs=dataset.inputs[:1], outputs=dataset.outputs,
-			known_output_noise=dataset.known_output_noise, output_ids=output_ids,
+			inputs=dataset.inputs[:1],
+			outputs=dataset.outputs,
+			known_output_noise=dataset.known_output_noise,
+			output_ids=output_ids,
 		)
 	return dataset
 
@@ -441,10 +454,13 @@ def merge_multioutput_datasets(datasets: Sequence[Dataset]) -> Dataset:
 	if all(d.known_output_noise is None for d in datasets):
 		known_output_noise = None
 	else:
-		known_output_noise = jnp.concatenate([
-			d.known_output_noise if d.known_output_noise is not None else jnp.full(d.outputs.shape, jnp.nan)
-			for d in datasets
-		], axis=1)
+		known_output_noise = jnp.concatenate(
+			[
+				d.known_output_noise if d.known_output_noise is not None else jnp.full(d.outputs.shape, jnp.nan)
+				for d in datasets
+			],
+			axis=1,
+		)
 
 	# If every output shares the exact same input locations, output_ids is redundant -- collapse
 	# back to the compact `None` (isotopic_output_in_tasks) representation, so a dataset that was
@@ -488,7 +504,9 @@ def load_csv(csv_path: str | Path | Sequence[str | Path], output_groups: Sequenc
 		return load_single_csv(csv_path, output_groups)
 
 	if output_groups is not None:
-		raise ValueError("output_groups is only valid for a single csv_path, not a sequence of paths (already one output per file).")
+		raise ValueError(
+			"output_groups is only valid for a single csv_path, not a sequence of paths (already one output per file)."
+		)
 
 	csv_paths = list(csv_path)
 	if len(csv_paths) == 1:
@@ -496,6 +514,8 @@ def load_csv(csv_path: str | Path | Sequence[str | Path], output_groups: Sequenc
 
 	task_id_sets = [set(pl.read_csv(p, columns=["TaskID"])["TaskID"].to_list()) for p in csv_paths]
 	if any(s != task_id_sets[0] for s in task_id_sets[1:]):
-		raise ValueError("All csv_path files must share the exact same set of TaskIDs to be merged into a multi-output Dataset.")
+		raise ValueError(
+			"All csv_path files must share the exact same set of TaskIDs to be merged into a multi-output Dataset."
+		)
 
 	return merge_multioutput_datasets([load_single_csv(p) for p in csv_paths])

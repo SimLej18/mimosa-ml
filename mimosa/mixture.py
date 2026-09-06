@@ -2,6 +2,8 @@
 Update and initialise the soft-clustering Mixture of tasks into mean-processes.
 """
 
+from abc import abstractmethod
+
 from jax import Array
 from jax.nn import softmax
 import jax.numpy as jnp
@@ -20,6 +22,8 @@ class MixtureInitialiser(eqx.Module):
 	"""
 	Base class for initialising a Mixture from a Dataset.
 	"""
+
+	@abstractmethod
 	def __call__(self, dataset: Dataset) -> Mixture:
 		"""
 		Initialise a Mixture from `dataset`.
@@ -34,6 +38,7 @@ class MixtureInitialiser(eqx.Module):
 		Initial Mixture.
 		"""
 		...
+
 
 def _summary_statistics(outputs: Array) -> Array:
 	"""
@@ -55,11 +60,15 @@ def _summary_statistics(outputs: Array) -> Array:
 	buffer rather than transposing it -- each row would then hold one statistic belonging to four
 	different tasks.
 	"""
-	return jnp.concatenate((
-		jnp.nanmin(outputs, axis=1),
-		jnp.nanmax(outputs, axis=1),
-		jnp.nanmean(outputs, axis=1),
-		jnp.nanstd(outputs, axis=1)), axis=-1)
+	return jnp.concatenate(
+		(
+			jnp.nanmin(outputs, axis=1),
+			jnp.nanmax(outputs, axis=1),
+			jnp.nanmean(outputs, axis=1),
+			jnp.nanstd(outputs, axis=1),
+		),
+		axis=-1,
+	)
 
 
 class KMeansMixtureInitialiser(MixtureInitialiser):
@@ -84,6 +93,7 @@ class KMeansMixtureInitialiser(MixtureInitialiser):
 	n_restarts
 		Number of k-means restarts to run, keeping the best. See `soft_kmeans`.
 	"""
+
 	prng_key: Array
 	n_clusters: int
 	n_outputs: int
@@ -129,9 +139,10 @@ class KMeansMixtureInitialiser(MixtureInitialiser):
 			features = _summary_statistics(dataset.outputs)  # (T, 4*C)
 		else:
 			output_ids = jnp.broadcast_to(output_ids, dataset.outputs.shape[:2])[..., None]
-			features = jnp.concatenate([
-				_summary_statistics(jnp.where(output_ids == o, dataset.outputs, jnp.nan))
-				for o in range(n_outputs)], axis=-1)  # (T, 4*O*C)
+			features = jnp.concatenate(
+				[_summary_statistics(jnp.where(output_ids == o, dataset.outputs, jnp.nan)) for o in range(n_outputs)],
+				axis=-1,
+			)  # (T, 4*O*C)
 
 		# A task with no surviving observation for some output would otherwise contribute a NaN
 		# feature, which poisons every distance in the k-means rather than just that one coordinate.
@@ -141,8 +152,14 @@ class KMeansMixtureInitialiser(MixtureInitialiser):
 		return Mixture(responsibilities=resp)
 
 
-def update_mixture(dataset: Dataset, grid: Grid, task_kernel: AbstractKernel, hyperposterior: Hyperposterior,
-                   mixture: Mixture, jitter: Array = DEFAULT_JITTER) -> Mixture:
+def update_mixture(
+	dataset: Dataset,
+	grid: Grid,
+	task_kernel: AbstractKernel,
+	hyperposterior: Hyperposterior,
+	mixture: Mixture,
+	jitter: Array = DEFAULT_JITTER,
+) -> Mixture:
 	"""
 	Update the tasks' responsibilities towards each mean-process, given the current hyperposterior.
 
@@ -167,9 +184,27 @@ def update_mixture(dataset: Dataset, grid: Grid, task_kernel: AbstractKernel, hy
 	"""
 	if dataset.inputs.shape[0] == 1:
 		output_ids = dataset.output_ids[0] if dataset.output_ids is not None else None
-		task_llhs = jnp.sum(tasks_nlls(dataset, grid, task_kernel(dataset.clean_inputs[0], output_ids=output_ids), hyperposterior, jitter=jitter), axis=-1)
+		task_llhs = jnp.sum(
+			tasks_nlls(
+				dataset,
+				grid,
+				task_kernel(dataset.clean_inputs[0], output_ids=output_ids),
+				hyperposterior,
+				jitter=jitter,
+			),
+			axis=-1,
+		)
 	else:
-		task_llhs = jnp.sum(tasks_nlls(dataset, grid, task_kernel(dataset.clean_inputs, output_ids=dataset.output_ids), hyperposterior, jitter=jitter), axis=-1)
+		task_llhs = jnp.sum(
+			tasks_nlls(
+				dataset,
+				grid,
+				task_kernel(dataset.clean_inputs, output_ids=dataset.output_ids),
+				hyperposterior,
+				jitter=jitter,
+			),
+			axis=-1,
+		)
 	return Mixture(responsibilities=softmax(jnp.log(mixture.proportions[None, :]) - task_llhs, axis=1))
 
 
@@ -177,8 +212,16 @@ class MixtureUpdater(eqx.Module):
 	"""
 	Callable wrapper around `update_mixture`, as an `equinox.Module`.
 	"""
-	def __call__(self, dataset: Dataset, grid: Grid, task_kernel: AbstractKernel, hyperposterior: Hyperposterior,
-				mixture: Mixture, jitter: Array = DEFAULT_JITTER) -> Mixture:
+
+	def __call__(
+		self,
+		dataset: Dataset,
+		grid: Grid,
+		task_kernel: AbstractKernel,
+		hyperposterior: Hyperposterior,
+		mixture: Mixture,
+		jitter: Array = DEFAULT_JITTER,
+	) -> Mixture:
 		"""
 		See `update_mixture`.
 		"""

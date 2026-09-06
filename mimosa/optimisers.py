@@ -1,16 +1,15 @@
 """
 Maximum likelihood optimisation of the cluster and task hyperparameters, against their
-respective negative log-likelihoods (see `mimosa-ml.nll`).
+respective negative log-likelihoods (see `mimosa.nll`).
 """
 
-import jax.numpy as jnp
 from jax import Array
 import optimistix as optx
 from equinox import combine
 import equinox as eqx
 from kernax import AbstractMean, AbstractKernel
 
-from mimosa.nll import clusters_nlls, tasks_nlls, ClusterNLL, TaskNLL
+from mimosa.nll import ClusterNLL, TaskNLL
 from mimosa.data_structures import Dataset, Grid, Hyperprior, Hyperposterior, Mixture
 from mimosa.constants import DEFAULT_JITTER
 
@@ -18,10 +17,17 @@ __all__ = ["optimise_clusters", "optimise_tasks", "ClusterOptimiser", "TaskOptim
 
 
 def optimise_clusters(
-		cluster_mean: AbstractMean, cluster_kernel: AbstractKernel,
-		hyperposterior: Hyperposterior, grid: Grid,
-		solver: optx.AbstractMinimiser = optx.LBFGS(atol=1e-4, rtol=1e-4), jitter: Array = DEFAULT_JITTER,
-		cluster_mean_frozen: AbstractMean | None = None, cluster_kernel_frozen: AbstractKernel | None = None) -> optx.Solution:
+	cluster_mean: AbstractMean,
+	cluster_kernel: AbstractKernel,
+	hyperposterior: Hyperposterior,
+	grid: Grid,
+	solver: optx.AbstractMinimiser = optx.LBFGS(atol=1e-4, rtol=1e-4),
+	jitter: Array = DEFAULT_JITTER,
+	cluster_mean_frozen: AbstractMean | None = None,
+	cluster_kernel_frozen: AbstractKernel | None = None,
+	nll: ClusterNLL = ClusterNLL(),
+	throw: bool = False,
+) -> optx.Solution:
 	"""
 	Maximum-likelihood optimisation of the cluster mean and kernel hyperparameters, against
 	`clusters_nlls`.
@@ -47,6 +53,10 @@ def optimise_clusters(
 		Part of `cluster_mean` to hold fixed during optimisation, if any.
 	cluster_kernel_frozen
 		Part of `cluster_kernel` to hold fixed during optimisation, if any.
+	nll
+		Negative log-likelihood to optimise against.
+	throw
+		If True, raise on optimisation failure instead of returning a failed `optx.Solution`.
 
 	Returns
 	-------
@@ -57,21 +67,30 @@ def optimise_clusters(
 		mean = params[0] if frozen[0] is None else combine(params[0], frozen[0])
 		kern = params[1] if frozen[1] is None else combine(params[1], frozen[1])
 
-		hyperprior = Hyperprior(mean=mean(grid.points, output_ids=grid.output_ids), covariance=kern(grid.points, output_ids=grid.output_ids))
+		hyperprior = Hyperprior(
+			mean=mean(grid.points, output_ids=grid.output_ids), covariance=kern(grid.points, output_ids=grid.output_ids)
+		)
 
-		return clusters_nlls(hyperposterior, hyperprior, jitter=jitter).sum()
-
+		return nll(hyperposterior, hyperprior, jitter=jitter).sum()
 
 	params = (cluster_mean, cluster_kernel)
 	frozen = (cluster_mean_frozen, cluster_kernel_frozen)
 
-	return optx.minimise(loss_fn, solver, params, frozen, throw=False)
+	return optx.minimise(loss_fn, solver, params, frozen, throw=throw)
+
 
 def optimise_tasks(
-		task_kernel: AbstractKernel,
-		dataset: Dataset, grid: Grid, hyperposterior: Hyperposterior, mixture: Mixture,
-		solver: optx.AbstractMinimiser = optx.LBFGS(atol=1e-4, rtol=1e-4), jitter: Array = DEFAULT_JITTER,
-		task_kernel_frozen: AbstractKernel | None = None) -> optx.Solution:
+	task_kernel: AbstractKernel,
+	dataset: Dataset,
+	grid: Grid,
+	hyperposterior: Hyperposterior,
+	mixture: Mixture,
+	solver: optx.AbstractMinimiser = optx.LBFGS(atol=1e-4, rtol=1e-4),
+	jitter: Array = DEFAULT_JITTER,
+	task_kernel_frozen: AbstractKernel | None = None,
+	nll: TaskNLL = TaskNLL(),
+	throw: bool = False,
+) -> optx.Solution:
 	"""
 	Maximum-likelihood optimisation of the task (and noise) kernel hyperparameters, against
 	`tasks_nlls`, weighted by each task's mixture responsibilities.
@@ -98,6 +117,10 @@ def optimise_tasks(
 		Diagonal jitter added before Cholesky factorizations, for numerical stability.
 	task_kernel_frozen
 		Part of `task_kernel` to hold fixed during optimisation, if any.
+	nll
+		Negative log-likelihood to optimise against.
+	throw
+		If True, raise on optimisation failure instead of returning a failed `optx.Solution`.
 
 	Returns
 	-------
@@ -113,14 +136,11 @@ def optimise_tasks(
 		else:
 			task_covs = kern(dataset.clean_inputs, output_ids=dataset.output_ids)
 
-		return (tasks_nlls(
-			dataset,
-			grid,
-			task_covs,
-			hyperposterior,
-			jitter=jitter) * mixture.responsibilities[..., None]).sum()
+		return (
+			nll(dataset, grid, task_covs, hyperposterior, jitter=jitter) * mixture.responsibilities[..., None]
+		).sum()
 
-	return optx.minimise(loss_fn, solver, task_kernel, task_kernel_frozen, throw=False)
+	return optx.minimise(loss_fn, solver, task_kernel, task_kernel_frozen, throw=throw)
 
 
 class ClusterOptimiser(eqx.Module):
@@ -137,6 +157,7 @@ class ClusterOptimiser(eqx.Module):
 	throw
 		If True, raise on optimisation failure instead of returning a failed `optx.Solution`.
 	"""
+
 	solver: optx.AbstractMinimiser
 	nll: ClusterNLL
 	throw: bool
@@ -146,27 +167,32 @@ class ClusterOptimiser(eqx.Module):
 		self.nll = nll
 		self.throw = throw
 
-	def __call__(self, cluster_mean: AbstractMean, cluster_kernel: AbstractKernel,
-	             hyperposterior: Hyperposterior, grid: Grid,
-	             jitter: Array = DEFAULT_JITTER,
-	             cluster_mean_frozen: AbstractMean | None = None,
-	             cluster_kernel_frozen: AbstractKernel | None = None) -> optx.Solution:
+	def __call__(
+		self,
+		cluster_mean: AbstractMean,
+		cluster_kernel: AbstractKernel,
+		hyperposterior: Hyperposterior,
+		grid: Grid,
+		jitter: Array = DEFAULT_JITTER,
+		cluster_mean_frozen: AbstractMean | None = None,
+		cluster_kernel_frozen: AbstractKernel | None = None,
+	) -> optx.Solution:
 		"""
 		See `optimise_clusters`.
 		"""
+		return optimise_clusters(
+			cluster_mean,
+			cluster_kernel,
+			hyperposterior,
+			grid,
+			solver=self.solver,
+			jitter=jitter,
+			cluster_mean_frozen=cluster_mean_frozen,
+			cluster_kernel_frozen=cluster_kernel_frozen,
+			nll=self.nll,
+			throw=self.throw,
+		)
 
-		def loss_fn(params, frozen):
-			mean = params[0] if frozen[0] is None else combine(params[0], frozen[0])
-			kern = params[1] if frozen[1] is None else combine(params[1], frozen[1])
-
-			hyperprior = Hyperprior(mean=mean(grid.points, output_ids=grid.output_ids), covariance=kern(grid.points, output_ids=grid.output_ids))
-
-			return self.nll(hyperposterior, hyperprior, jitter=jitter).sum()
-
-		params = (cluster_mean, cluster_kernel)
-		frozen = (cluster_mean_frozen, cluster_kernel_frozen)
-
-		return optx.minimise(loss_fn, self.solver, params, frozen, throw=self.throw)
 
 class TaskOptimiser(eqx.Module):
 	"""
@@ -182,6 +208,7 @@ class TaskOptimiser(eqx.Module):
 	throw
 		If True, raise on optimisation failure instead of returning a failed `optx.Solution`.
 	"""
+
 	solver: optx.AbstractMinimiser
 	nll: TaskNLL
 	throw: bool
@@ -191,22 +218,28 @@ class TaskOptimiser(eqx.Module):
 		self.nll = nll
 		self.throw = throw
 
-	def __call__(self, task_kernel: AbstractKernel,
-				 dataset: Dataset, grid: Grid, hyperposterior: Hyperposterior, mixture: Mixture,
-				 jitter: Array = DEFAULT_JITTER, task_kernel_frozen: AbstractKernel | None = None) -> optx.Solution:
+	def __call__(
+		self,
+		task_kernel: AbstractKernel,
+		dataset: Dataset,
+		grid: Grid,
+		hyperposterior: Hyperposterior,
+		mixture: Mixture,
+		jitter: Array = DEFAULT_JITTER,
+		task_kernel_frozen: AbstractKernel | None = None,
+	) -> optx.Solution:
 		"""
 		See `optimise_tasks`.
 		"""
-
-		def loss_fn(params, frozen):
-			kern = params if frozen is None else combine(params, frozen)
-
-			if dataset.inputs.shape[0] == 1:
-				output_ids = dataset.output_ids[0] if dataset.output_ids is not None else None
-				task_covs = kern(dataset.clean_inputs[0], output_ids=output_ids)
-			else:
-				task_covs = kern(dataset.clean_inputs, output_ids=dataset.output_ids)
-
-			return (self.nll(dataset, grid, task_covs, hyperposterior, jitter=jitter) * mixture.responsibilities[..., None]).sum()
-
-		return optx.minimise(loss_fn, self.solver, task_kernel, task_kernel_frozen, throw=self.throw)
+		return optimise_tasks(
+			task_kernel,
+			dataset,
+			grid,
+			hyperposterior,
+			mixture,
+			solver=self.solver,
+			jitter=jitter,
+			task_kernel_frozen=task_kernel_frozen,
+			nll=self.nll,
+			throw=self.throw,
+		)

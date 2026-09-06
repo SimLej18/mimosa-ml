@@ -16,19 +16,19 @@ extensions = [
 
 myst_enable_extensions = ["dollarmath", "amsmath", "colon_fence"]
 
-# jupyter-cache initialise son dossier et sa base SQLite paresseusement, au premier accès. Sous
-# `sphinx-build -j auto` (la commande par défaut de Read the Docs), plusieurs workers le font en
-# même temps et le build casse (FileExistsError, puis "table settings already exists").
-# On fixe le chemin et on initialise le cache ici, dans le process parent, avant le fork.
+# jupyter-cache creates its directory and SQLite database lazily, on first access. Under
+# `sphinx-build -j auto` (Read the Docs' default command) several workers do that at the same time
+# and the build breaks (FileExistsError, then "table settings already exists"). Fixing the path and
+# initialising the cache here, in the parent process, gets it done before the fork.
 nb_execution_cache_path = str(Path(__file__).parent / "_build" / ".jupyter_cache")
 get_cache(nb_execution_cache_path).db
 
 nb_execution_mode = "cache"
-nb_execution_timeout = 600          # JIT + Cholesky, sois large
-nb_execution_raise_on_error = True  # un exemple cassé fait échouer le build
+nb_execution_timeout = 600          # generous: JIT compilation plus Cholesky factorisations
+nb_execution_raise_on_error = True  # a broken example fails the build
 
-# La barre de progression de jax-tqdm (et son TqdmWarning quand ipywidgets n'est pas installé)
-# passe par stderr : inutile dans une page statique.
+# jax-tqdm's progress bar (and its TqdmWarning when ipywidgets isn't installed) goes to stderr,
+# which is of no use in a static page.
 nb_output_stderr = "remove"
 
 html_theme = "sphinx_book_theme"

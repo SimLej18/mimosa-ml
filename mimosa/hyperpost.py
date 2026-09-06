@@ -19,9 +19,14 @@ from mimosa.constants import DEFAULT_JITTER
 __all__ = ["single_channel_hyperpost", "single_cluster_hyperpost", "hyperpost", "one_shot_hyperpost", "Hyperpost"]
 
 
-def single_channel_hyperpost(outputs: Array, grid: Grid, responsibilities: Array,
-                            hyperprior: Hyperprior, task_covs: Array,
-                            jitter: Array = DEFAULT_JITTER) -> Hyperposterior:
+def single_channel_hyperpost(
+	outputs: Array,
+	grid: Grid,
+	responsibilities: Array,
+	hyperprior: Hyperprior,
+	task_covs: Array,
+	jitter: Array = DEFAULT_JITTER,
+) -> Hyperposterior:
 	"""
 	Compute the hyperposterior for a single mean-process and a single channel dimension.
 
@@ -44,7 +49,9 @@ def single_channel_hyperpost(outputs: Array, grid: Grid, responsibilities: Array
 	-------
 	Hyperposterior over this mean-process's values at the grid points, for this channel.
 	"""
-	big_eye = jnp.eye(hyperprior.covariance.shape[-1])  # hyperprior is always dense over O*G, unlike grid.points which may collapse to G
+	big_eye = jnp.eye(
+		hyperprior.covariance.shape[-1]
+	)  # hyperprior is always dense over O*G, unlike grid.points which may collapse to G
 	small_eye = jnp.eye(outputs.shape[-1])
 
 	# Cluster covariance inversion
@@ -55,14 +62,18 @@ def single_channel_hyperpost(outputs: Array, grid: Grid, responsibilities: Array
 	nan_mask = jnp.isnan(outputs)  # (T, O*N)
 	nan_mask_2d = nan_mask[:, None, :] | nan_mask[:, :, None]  # (T, O*N, O*N)
 	task_covs_padded = jnp.where(nan_mask_2d, small_eye, task_covs)  # Padding
-	task_covs_l = cho_factor(task_covs_padded, jitter=jitter)  # Shape (T, O*N, O*N)  with T=1 if shared_inputs_in_tasks and shared_task_hps
+	task_covs_l = cho_factor(
+		task_covs_padded, jitter=jitter
+	)  # Shape (T, O*N, O*N)  with T=1 if shared_inputs_in_tasks and shared_task_hps
 	task_covs_inv = cho_solve(task_covs_l, jnp.broadcast_to(small_eye, task_covs_l.shape))
 	task_covs_inv -= jnp.where(nan_mask_2d, task_covs_inv, 0)  # Correction on the diagonal
 	task_covs_inv *= responsibilities[:, None, None]  # Apply mixture coefficients
 
 	# Mapping to full grid
 	mappings = jnp.broadcast_to(grid.mappings, (outputs.shape[0], grid.mappings.shape[1]))
-	task_covs_inv = jnp.zeros_like(big_eye).at[mappings[:, :, None], mappings[:, None, :]].add(task_covs_inv)  # Shape (O*G, O*G)
+	task_covs_inv = (
+		jnp.zeros_like(big_eye).at[mappings[:, :, None], mappings[:, None, :]].add(task_covs_inv)
+	)  # Shape (O*G, O*G)
 
 	# Sum mean and task covariances and compute Cholesky factor of the posterior covariance
 	post_covs_inv = cho_factor(cluster_cov_inv + task_covs_inv, jitter=jitter)  # Shape (O*G, O*G)
@@ -71,7 +82,9 @@ def single_channel_hyperpost(outputs: Array, grid: Grid, responsibilities: Array
 	# --- Posterior mean ---
 	# Compute prior means
 	prior_mean = cho_solve(cluster_cov_l, hyperprior.mean)  # Shape (O*G)
-	task_means = cho_solve(jnp.broadcast_to(task_covs_l, (outputs.shape[0],)+task_covs_l.shape[1:]), jnp.nan_to_num(outputs))  # Shape (T, O*N)
+	task_means = cho_solve(
+		jnp.broadcast_to(task_covs_l, (outputs.shape[0],) + task_covs_l.shape[1:]), jnp.nan_to_num(outputs)
+	)  # Shape (T, O*N)
 	task_means *= responsibilities[:, None]  # Shape (T, O*N)
 	task_means = jnp.zeros(big_eye.shape[0]).at[mappings].add(task_means)  # Shape (O*G)
 
@@ -81,9 +94,14 @@ def single_channel_hyperpost(outputs: Array, grid: Grid, responsibilities: Array
 	return Hyperposterior(mean=post_mean, covariance=post_cov)
 
 
-def single_cluster_hyperpost(outputs: Array, grid: Grid, responsibilities: Array,
-                             hyperprior: Hyperprior, task_covs: Array,
-                             jitter: Array = DEFAULT_JITTER) -> Hyperposterior:
+def single_cluster_hyperpost(
+	outputs: Array,
+	grid: Grid,
+	responsibilities: Array,
+	hyperprior: Hyperprior,
+	task_covs: Array,
+	jitter: Array = DEFAULT_JITTER,
+) -> Hyperposterior:
 	"""
 	Compute the hyperposterior for a single mean-process, vmapped across channel dimensions.
 
@@ -125,8 +143,9 @@ def single_cluster_hyperpost(outputs: Array, grid: Grid, responsibilities: Array
 			return f(outputs.T.mT, grid, responsibilities, hyperprior, task_covs.swapaxes(0, 1), jitter)
 
 
-def hyperpost(dataset: Dataset, grid: Grid, mixture: Mixture, parameters: Parameters,
-             jitter: Array = DEFAULT_JITTER) -> Hyperposterior:
+def hyperpost(
+	dataset: Dataset, grid: Grid, mixture: Mixture, parameters: Parameters, jitter: Array = DEFAULT_JITTER
+) -> Hyperposterior:
 	"""
 	Compute the hyperposterior over every mean-process's values at the grid points.
 
@@ -166,15 +185,22 @@ def hyperpost(dataset: Dataset, grid: Grid, mixture: Mixture, parameters: Parame
 	>>> hyperposterior.mean.shape
 	(1, 1, 5)
 	"""
-	hyperprior = Hyperprior(parameters.cluster_mean(grid.points, output_ids=grid.output_ids), parameters.cluster_kernel(grid.points, output_ids=grid.output_ids))
+	hyperprior = Hyperprior(
+		parameters.cluster_mean(grid.points, output_ids=grid.output_ids),
+		parameters.cluster_kernel(grid.points, output_ids=grid.output_ids),
+	)
 	# hyperprior mean has shape (K, C, O*G) with K=1 if shared_cluster_hps and C=1 if shared_channel_hps
 	# hyperprior cov has shape (K, C, O*G, O*G) with K=1 if shared_cluster_hps and C=1 if shared_channel_hps
 
 	if dataset.inputs.shape[0] == 1:
 		output_ids = dataset.output_ids[0] if dataset.output_ids is not None else None
-		task_covs = parameters.task_kernel(dataset.clean_inputs[0], output_ids=output_ids) + parameters.noise_kernel(dataset.clean_inputs[0], output_ids=output_ids)  # Shape: (T, K, C, O*N, O*N) with
+		task_covs = parameters.task_kernel(dataset.clean_inputs[0], output_ids=output_ids) + parameters.noise_kernel(
+			dataset.clean_inputs[0], output_ids=output_ids
+		)  # Shape: (T, K, C, O*N, O*N) with
 	else:
-		task_covs = parameters.task_kernel(dataset.clean_inputs, output_ids=dataset.output_ids) + parameters.noise_kernel(dataset.clean_inputs, output_ids=dataset.output_ids)
+		task_covs = parameters.task_kernel(
+			dataset.clean_inputs, output_ids=dataset.output_ids
+		) + parameters.noise_kernel(dataset.clean_inputs, output_ids=dataset.output_ids)
 
 	# Shape: (T, K, C, O*N, O*N) with
 	# T=1 if shared_inputs_in_tasks, shared_task_hps and no cluster_specific_task_hps
@@ -184,7 +210,9 @@ def hyperpost(dataset: Dataset, grid: Grid, mixture: Mixture, parameters: Parame
 	if hyperprior.mean.shape[0] == 1:  # Shared cluster HPs
 		if task_covs.shape[1] == 1:  # No cluster_specific_task_hps
 			f = vmap(single_cluster_hyperpost, in_axes=(None, None, 0, None, None, None))
-			return f(dataset.outputs, grid, mixture.responsibilities.T, hyperprior[0], task_covs.swapaxes(0, 1)[0], jitter)
+			return f(
+				dataset.outputs, grid, mixture.responsibilities.T, hyperprior[0], task_covs.swapaxes(0, 1)[0], jitter
+			)
 		else:
 			f = vmap(single_cluster_hyperpost, in_axes=(None, None, 0, None, 0, None))
 			return f(dataset.outputs, grid, mixture.responsibilities.T, hyperprior[0], task_covs.swapaxes(0, 1), jitter)
@@ -198,8 +226,9 @@ def hyperpost(dataset: Dataset, grid: Grid, mixture: Mixture, parameters: Parame
 			return f(dataset.outputs, grid, mixture.responsibilities.T, hyperprior, task_covs.swapaxes(0, 1), jitter)
 
 
-def one_shot_hyperpost(dataset: Dataset, grid: Grid, parameters: Parameters, cluster_task_ids: Array,
-                       jitter: Array = DEFAULT_JITTER) -> Hyperposterior:
+def one_shot_hyperpost(
+	dataset: Dataset, grid: Grid, parameters: Parameters, cluster_task_ids: Array, jitter: Array = DEFAULT_JITTER
+) -> Hyperposterior:
 	"""
 	Hyperposterior in which each mean-process is conditioned on a single task, chosen by the caller
 	as representative of that cluster.
@@ -248,7 +277,9 @@ def one_shot_hyperpost(dataset: Dataset, grid: Grid, parameters: Parameters, clu
 	"""
 	cluster_task_ids = jnp.asarray(cluster_task_ids)
 	responsibilities = jnp.zeros((len(dataset.outputs), len(cluster_task_ids)))
-	mixture = Mixture(responsibilities=responsibilities.at[cluster_task_ids, jnp.arange(len(cluster_task_ids))].set(1.))
+	mixture = Mixture(
+		responsibilities=responsibilities.at[cluster_task_ids, jnp.arange(len(cluster_task_ids))].set(1.0)
+	)
 	return hyperpost(dataset, grid, mixture, parameters, jitter)
 
 
@@ -256,8 +287,10 @@ class Hyperpost(eqx.Module):
 	"""
 	Callable wrapper around `hyperpost`, as an `equinox.Module`.
 	"""
-	def __call__(self, dataset: Dataset, grid: Grid, mixture: Mixture, parameters: Parameters,
-				 jitter: Array = DEFAULT_JITTER) -> Hyperposterior:
+
+	def __call__(
+		self, dataset: Dataset, grid: Grid, mixture: Mixture, parameters: Parameters, jitter: Array = DEFAULT_JITTER
+	) -> Hyperposterior:
 		"""
 		See `hyperpost`.
 

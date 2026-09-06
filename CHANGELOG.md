@@ -9,13 +9,10 @@ before upgrading.
 
 ---
 
-## [Unreleased]
+## [v0.4.0-alpha] — 2026-09-06
 
 ### Added
 
-* `one_shot_hyperpost()`: hyperposterior conditioning each mean-process on a single task the caller
-  names as representative of that cluster. Pass it to `BasicModel.fit()` as `init_hyperposterior` to
-  warm-start the fit from known cluster representatives.
 * `mimosa.grid.RegularGrid`: evenly-spaced grid spanning explicit `bounds`, one `(min, max)` per
   input dimension. 
 * `mimosa.grid.MergedGrid`: `MergedGrid(*grids)` pools several grids' points into one and records,
@@ -34,6 +31,9 @@ before upgrading.
 * `n_restarts` argument to `soft_kmeans()` and `KMeansMixtureInitialiser`: run that
   many independently initialised k-means and keep the one reaching the
   lowest free energy. 
+* `one_shot_hyperpost()`: hyperposterior conditioning each mean-process on a single task the caller
+  names as representative of that cluster. Pass it to `BasicModel.fit()` as `init_hyperposterior` to
+  warm-start the fit from known cluster representatives.
 * `color_by_task` argument to `plot_dataset()`: color each task with its own color instead of by
   cluster assignment.
 * `mimosa.mappings`, with `InputMapper` and `ExactInputMapper`: grid builders now delegate
@@ -93,6 +93,11 @@ before upgrading.
 * `mimosa.linalg.compute_mapping()` is renamed `find_exact_mappings()`.
 * `mimosa.prediction.Predictor` is now an abstract base class: `Predictor()` raises `TypeError`.
   Use `FunctionPredictor()` for the previous behaviour.
+* `mimosa.mixture.MixtureInitialiser` is now an abstract base class: `MixtureInitialiser()` raises
+  `TypeError`. Use `KMeansMixtureInitialiser(...)`, or subclass it and implement `__call__`.
+* `GammaLaplaceApproximator` is no longer re-exported from the package root: it is the abstract base
+  of `PoissonLaplaceApproximator`/`ExponentialLaplaceApproximator`, not a usable approximator (it has
+  no `unwrap`). Import it from `mimosa.laplace` to subclass it.
 * `mimosa.prediction.predict()` takes `noisy` before `jitter`, so callers passing `jitter`
   positionally now bind it to `noisy`. Pass it by keyword.
 * Imports may have moved: the supported API is now re-exported flat from `mimosa` (see its
@@ -369,7 +374,8 @@ tasks as a mixture of Magma GPs, multi-dimensional inputs and (uncorrelated) out
 predictions with uncertainty quantification, Kernax kernel/mean integration, and full JAX/Equinox
 compatibility for `vmap`/`grad`/`jit`.
 
-[v0.3.0-alpha]: https://github.com/SimLej18/mimosa/releases/tag/v0.3.0-alpha
-[v0.2.0]: https://github.com/SimLej18/mimosa/releases/tag/v0.2.0
-[v0.1.1-alpha]: https://github.com/SimLej18/mimosa/releases/tag/v0.1.1-alpha
-[v0.1.0-alpha]: https://github.com/SimLej18/mimosa/releases/tag/v0.1.0-alpha
+[v0.4.0-alpha]: https://github.com/SimLej18/mimosa-ml/releases/tag/v0.4.0-alpha
+[v0.3.0-alpha]: https://github.com/SimLej18/mimosa-ml/releases/tag/v0.3.0-alpha
+[v0.2.0]: https://github.com/SimLej18/mimosa-ml/releases/tag/v0.2.0
+[v0.1.1-alpha]: https://github.com/SimLej18/mimosa-ml/releases/tag/v0.1.1-alpha
+[v0.1.0-alpha]: https://github.com/SimLej18/mimosa-ml/releases/tag/v0.1.0-alpha

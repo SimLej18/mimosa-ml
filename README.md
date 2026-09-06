@@ -9,7 +9,7 @@ Its core features currently include:
 * Multi-dimensional inputs and outputs
 * Inter-output correlation learning for vector-valued functions
 * Probabilistic predictions with uncertainty quantification
-* A multitude of training configuration to model complex relationships between tasks, clusters and inputs
+* A multitude of training configurations to model complex relationships between tasks, clusters and inputs
 * Deep kernax integration for complex kernels/means functions
 * Support for training and predicting on GPUs and TPUs
 * Full Jax/Equinox compatibility for vmap/grad/jit
@@ -62,13 +62,13 @@ We basically took Gaussian processes, and combined them with a ton of ✨*fancy 
 * ➡️ Clustering as a mixture of Magma GPs
 * ➡️ Multi-dimensional inputs thanks to efficient kernels from [Kernax](https://github.com/SimLej18/kernax-ml)
 * ➡️ Multi-dimensional uncorrelated channels by simply broadcasting the algorithm to another dimension
-* ➡️ Multi-output correlation discovery by learning a [multi-output kernel]([https://arxiv.org/pdf/1106.6251])
+* ➡️ Multi-output correlation discovery by learning a [multi-output kernel](https://arxiv.org/pdf/1106.6251)
 
 
 We use **JAX** as a back-end for every computation! 
 `jit` compilation saves us a lot of time, 
 `vmap` allows us to efficiently batch over all dimensions of the data and parameters,
-`grad` spares us the hastle of implementing gradients for every component of the model, 
+`grad` spares us the hassle of implementing gradients for every component of the model, 
 and XLA support allows us to train and predict on GPUs and TPUs for scalability.
 
 A GP library is nothing without a fast and modular **Kernel library**. 
@@ -78,7 +78,7 @@ throughout the algorithms.
 ---
 ## Examples
 
-Basic examples can be found in the `examples` directory. A quick example using the top-level API from Model can be found here:
+Basic examples can be found in the `docs/examples` directory. A quick example using the top-level API from Model can be found here:
 
 ```python
 import jax.random as jr
@@ -152,10 +152,10 @@ wrapped = approximator.wrap(dataset)      # Gaussian means + per-point known noi
 probabilities = approximator.unwrap(samples)  # predictions back to observation space
 ```
 
-See `examples/binary_classif_example.py` for the full pipeline. Experimental.
+See `docs/examples/binary_classif_example.py` for the full pipeline. Experimental.
 
-MIMOSA is designed to have multiple layer of customisation. The "Model" API covers the most general use case of the
-algorithm, but you should consider building your own training loops and combining/developping your own sub-modules to 
+MIMOSA is designed to have multiple layers of customisation. The "Model" API covers the most general use case of the
+algorithm, but you should consider building your own training loops and combining/developing your own sub-modules to 
 create tailored models and pipelines.
 
 ---
@@ -198,6 +198,8 @@ processes/predictions/samples, ...), consider increasing the `jitter` used in th
 directly at the Model level:
 
 ```python
+import jax.numpy as jnp
+
 model = BasicModel(prng_key=key, n_clusters=K, jitter=jnp.asarray(1e-5))
 ```
 
@@ -209,16 +211,16 @@ By default, Mimosa's jitter is fixed at 1e-8 for every component of the framewor
 MIMOSA is primarily developed by the *Magma Task Force*, composed of:
 
 * [Arthur Leroy](https://arthur-leroy.netlify.app/), researcher at Paris Saclay and INRAe (FR), main author of the original tool [MagmaClustR](https://arthurleroy.github.io/MagmaClustR/) and coordinator of the Task Force.
-* [Simon Lejoly](https://researchportal.unamur.be/fr/persons/slejoly/), PhD student at UNamur (BE), main developper of the package and author of the [Kernax package](https://github.com/SimLej18/kernax-ml)
-* [Alexia Grenouillat]([TODO]), PhD student at INSA Toulouse (FR), working on multi-output correlation discovery.
-* [Térence Viellard]([TODO]), PhD student at INRAe (FR), working on sparse approximations and scalability.
+* [Simon Lejoly](https://researchportal.unamur.be/fr/persons/slejoly/), PhD student at UNamur (BE), main developer of the package and author of the [Kernax package](https://github.com/SimLej18/kernax-ml)
+* Alexia Grenouillat, PhD student at INSA Toulouse (FR), working on multi-output correlation discovery.
+* Térence Viellard, PhD student at INRAe (FR), working on sparse approximations and scalability.
 
 If you use the package for your research, please consider citing the following paper:
 
-[TODO]
+> **TODO** — citation to be added once the paper is published.
 
 If your research field could provide an interesting example of using MIMOSA, please consider publishing a toy example in
-the documentation [TODO].
+the documentation.
 
 ---
 ## Contributing

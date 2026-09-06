@@ -4,6 +4,7 @@ Package-wide numerical constants.
 This module imports nothing from `mimosa`, so every other module may import it without risking a
 cycle through the package root.
 """
+
 import jax.numpy as jnp
 
 __all__ = ["DEFAULT_JITTER", "PAD_INDEX"]

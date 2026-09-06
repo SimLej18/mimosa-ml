@@ -12,6 +12,20 @@ repos:
       - id: nbstripout
         files: ^docs/examples/.*\.ipynb$
 
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.6
+    hooks:
+      - id: ruff-check
+        files: ^mimosa/.*\.py$
+      - id: ruff-format
+        files: ^mimosa/.*\.py$
+
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    # uv version.
+    rev: 0.12.10
+    hooks:
+      - id: uv-lock
+
   - repo: local
     hooks:
       - id: no-package-root-imports

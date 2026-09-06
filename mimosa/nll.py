@@ -14,8 +14,15 @@ from mimosa.data_structures import Dataset, Grid, Hyperposterior, Hyperprior
 from mimosa.constants import DEFAULT_JITTER
 
 __all__ = [
-	"single_channel_mvn_nll", "mvn_nll", "single_channel_trace_correction", "trace_correction", "magma_nll",
-	"clusters_nlls", "tasks_nlls", "ClusterNLL", "TaskNLL"
+	"single_channel_mvn_nll",
+	"mvn_nll",
+	"single_channel_trace_correction",
+	"trace_correction",
+	"magma_nll",
+	"clusters_nlls",
+	"tasks_nlls",
+	"ClusterNLL",
+	"TaskNLL",
 ]
 
 
@@ -44,7 +51,7 @@ def single_channel_mvn_nll(value: Array, mean: Array, cov: Array, jitter: Array 
 
 	cov = jnp.where(nan_mask[None, :] | nan_mask[:, None], jnp.eye(cov.shape[-1]), cov)
 	cov_l = cho_factor(cov, jitter=jitter)  # Shape (O*N, O*N)
-	diff = jnp.where(nan_mask, 0., value - mean)  # Shape (O*N,)
+	diff = jnp.where(nan_mask, 0.0, value - mean)  # Shape (O*N,)
 	y = cho_solve(cov_l, diff[:, None])[:, 0]  # Shape (O*N,)
 
 	data_fit = jnp.sum(diff * y)
@@ -110,7 +117,7 @@ def single_channel_trace_correction(value: Array, cov: Array, post_cov: Array, j
 	cov_l = cho_factor(cov, jitter=jitter)  # Shape (O*N, O*N)
 
 	v = jsp.linalg.solve_triangular(cov_l, post_cov_l, lower=True)
-	return 0.5 * (jnp.sum(v ** 2) - jnp.sum(nan_mask))
+	return 0.5 * (jnp.sum(v**2) - jnp.sum(nan_mask))
 
 
 def trace_correction(values: Array, cov: Array, post_cov: Array, jitter: Array = DEFAULT_JITTER) -> Array:
@@ -166,8 +173,7 @@ def magma_nll(values: Array, mean: Array, cov: Array, post_cov: Array, jitter: A
 	return mvn_nll(values, mean, cov, jitter=jitter) + trace_correction(values, cov, post_cov, jitter=jitter)
 
 
-def clusters_nlls(hyperposterior: Hyperposterior, hyperprior: Hyperprior,
-                  jitter: Array = DEFAULT_JITTER) -> Array:
+def clusters_nlls(hyperposterior: Hyperposterior, hyperprior: Hyperprior, jitter: Array = DEFAULT_JITTER) -> Array:
 	"""
 	Negative log-likelihood of every mean-process, for each channel, under its prior.
 
@@ -186,14 +192,17 @@ def clusters_nlls(hyperposterior: Hyperposterior, hyperprior: Hyperprior,
 	"""
 	hyperprior = Hyperprior(
 		mean=jnp.broadcast_to(hyperprior.mean, hyperposterior.mean.shape),
-		covariance=jnp.broadcast_to(hyperprior.covariance, hyperposterior.covariance.shape)
+		covariance=jnp.broadcast_to(hyperprior.covariance, hyperposterior.covariance.shape),
 	)
 
-	return vmap(magma_nll, in_axes=(0, 0, 0, 0, None))(hyperposterior.mean.mT, hyperprior.mean, hyperprior.covariance, hyperposterior.covariance, jitter)
+	return vmap(magma_nll, in_axes=(0, 0, 0, 0, None))(
+		hyperposterior.mean.mT, hyperprior.mean, hyperprior.covariance, hyperposterior.covariance, jitter
+	)
 
 
-def tasks_nlls(dataset: Dataset, grid: Grid, task_covs: Array, hyperposterior: Hyperposterior,
-               jitter: Array = DEFAULT_JITTER) -> Array:
+def tasks_nlls(
+	dataset: Dataset, grid: Grid, task_covs: Array, hyperposterior: Hyperposterior, jitter: Array = DEFAULT_JITTER
+) -> Array:
 	"""
 	Negative log-likelihood of every task, under each mean-process, for each channel.
 
@@ -215,7 +224,9 @@ def tasks_nlls(dataset: Dataset, grid: Grid, task_covs: Array, hyperposterior: H
 	-------
 	Negative log-likelihood of every task, under each mean-process, for each channel. Shape `(T, K, C)`.
 	"""
-	task_covs = jnp.broadcast_to(task_covs, (dataset.outputs.shape[0],)+hyperposterior.covariance.shape[:-2]+task_covs.shape[-2:])
+	task_covs = jnp.broadcast_to(
+		task_covs, (dataset.outputs.shape[0],) + hyperposterior.covariance.shape[:-2] + task_covs.shape[-2:]
+	)
 
 	def task_nll(outputs, mappings, task_cov):
 		post = hyperposterior.marginal(mappings)  # (K, C, O*N)
@@ -229,18 +240,27 @@ class ClusterNLL(eqx.Module):
 	"""
 	Callable wrapper around `clusters_nlls`, as an `equinox.Module`.
 	"""
+
 	def __call__(self, hyperposterior: Hyperposterior, hyperprior: Hyperprior, jitter: Array = DEFAULT_JITTER) -> Array:
 		"""
 		See `clusters_nlls`.
 		"""
 		return clusters_nlls(hyperposterior, hyperprior, jitter)
 
+
 class TaskNLL(eqx.Module):
 	"""
 	Callable wrapper around `tasks_nlls`, as an `equinox.Module`.
 	"""
-	def __call__(self, dataset: Dataset, grid: Grid, task_covs: Array, hyperposterior: Hyperposterior,
-				jitter: Array = DEFAULT_JITTER) -> Array:
+
+	def __call__(
+		self,
+		dataset: Dataset,
+		grid: Grid,
+		task_covs: Array,
+		hyperposterior: Hyperposterior,
+		jitter: Array = DEFAULT_JITTER,
+	) -> Array:
 		"""
 		See `tasks_nlls`.
 		"""

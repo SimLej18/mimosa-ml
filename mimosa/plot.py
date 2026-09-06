@@ -33,11 +33,17 @@ from jax import Array
 from mimosa.data_structures import Dataset, Dimensions, Grid, Hyperposterior, Hyperprior, Mixture, MultivariateNormal
 
 __all__ = [
-	"IdArg", "plot_channel", "plot_task", "plot_dataset", "plot_single_cluster_single_channel",
-	"plot_single_cluster", "plot_clusters", "plot_single_task_prediction"
+	"IdArg",
+	"plot_channel",
+	"plot_task",
+	"plot_dataset",
+	"plot_single_cluster_single_channel",
+	"plot_single_cluster",
+	"plot_clusters",
+	"plot_single_task_prediction",
 ]
 
-plt.style.use("seaborn-v0_8-whitegrid")
+_STYLE = "seaborn-v0_8-whitegrid"
 
 
 IdArg = int | Literal["all"]
@@ -64,6 +70,10 @@ def _get_fig_ax(fig, ax, nrows: int, ncols: int, figsize: tuple[float, float] | 
 	Get or create a (fig, ax) pair with an `nrows` x `ncols` grid of axes, returning `ax` as a 2D
 	array regardless of grid size. Reuses `fig`/`ax` if given, so plots can be composed together.
 
+	A figure created here is styled with `_STYLE`, applied through `plt.style.context` so the
+	caller's global rcParams are left untouched. One passed in through `fig`/`ax` keeps whatever
+	style it was created with.
+
 	Either way, the figure's layout engine is set to "constrained": unlike a one-shot
 	`fig.tight_layout()` call, it keeps titles, axis labels and figure-level legends from
 	overlapping (or from being clipped at the figure's edge) even as more elements are added later
@@ -78,7 +88,8 @@ def _get_fig_ax(fig, ax, nrows: int, ncols: int, figsize: tuple[float, float] | 
 
 	if figsize is None:
 		figsize = (4 * ncols, 3 * nrows)
-	fig, ax = plt.subplots(nrows, ncols, figsize=figsize, squeeze=False, layout="constrained")
+	with plt.style.context(_STYLE):
+		fig, ax = plt.subplots(nrows, ncols, figsize=figsize, squeeze=False, layout="constrained")
 	return fig, ax
 
 
@@ -281,7 +292,7 @@ def plot_task(
 	fig, ax = _get_fig_ax(fig, ax, len(o_ids), len(c_ids), figsize=figsize)
 
 	for col, c in enumerate(c_ids):
-		plot_channel(dataset, dims, t_id, c, o_id=o_id, fig=fig, ax=ax[:, col:col + 1], color=color, **scatter_kwargs)
+		plot_channel(dataset, dims, t_id, c, o_id=o_id, fig=fig, ax=ax[:, col : col + 1], color=color, **scatter_kwargs)
 
 	return fig, ax
 
@@ -346,10 +357,11 @@ def plot_dataset(
 		palette = _palette(dims.T)
 		colors = {t: palette[t] for t in t_ids}
 		# Colors repeat past the palette's size, which would make a legend misleading (and unwieldy).
-		handles = [
-			plt.Line2D([0], [0], marker="o", linestyle="", color=palette[t], label=f"task {t}")
-			for t in t_ids
-		] if len(t_ids) <= len(set(palette)) else []
+		handles = (
+			[plt.Line2D([0], [0], marker="o", linestyle="", color=palette[t], label=f"task {t}") for t in t_ids]
+			if len(t_ids) <= len(set(palette))
+			else []
+		)
 	elif mixture is None:
 		colors = {t: "C0" for t in t_ids}
 		handles = []
@@ -359,8 +371,7 @@ def plot_dataset(
 		assignments = np.asarray(mixture.assignments)
 		colors = {t: palette[assignments[t]] for t in t_ids}
 		handles = [
-			plt.Line2D([0], [0], marker="o", linestyle="", color=palette[k], label=f"cluster {k}")
-			for k in range(K)
+			plt.Line2D([0], [0], marker="o", linestyle="", color=palette[k], label=f"cluster {k}") for k in range(K)
 		]
 
 	for t in t_ids:
@@ -452,8 +463,14 @@ def plot_single_cluster_single_channel(
 			post_mean = np.asarray(post_mean)
 			post_std = np.sqrt(np.diagonal(np.asarray(post_cov)))
 			a.plot(x, post_mean, linestyle="-", color=color, **line_kwargs)
-			a.fill_between(x, post_mean - ci_scale * post_std, post_mean + ci_scale * post_std,
-							color=color, alpha=ci_alpha, linewidth=0)
+			a.fill_between(
+				x,
+				post_mean - ci_scale * post_std,
+				post_mean + ci_scale * post_std,
+				color=color,
+				alpha=ci_alpha,
+				linewidth=0,
+			)
 		a.set_title(f"channel {c_id}" + (f", output {o}" if len(o_ids) > 1 else ""))
 		a.set_xlabel("input")
 		a.set_ylabel("channel value")
@@ -521,8 +538,20 @@ def plot_single_cluster(
 
 	for col, c in enumerate(c_ids):
 		plot_single_cluster_single_channel(
-			grid, dims, k_id, c, hyperprior=hyperprior, hyperposterior=hyperposterior, o_id=o_id,
-			fig=fig, ax=ax[:, col:col + 1], color=color, ci_scale=ci_scale, ci_alpha=ci_alpha, **line_kwargs)
+			grid,
+			dims,
+			k_id,
+			c,
+			hyperprior=hyperprior,
+			hyperposterior=hyperposterior,
+			o_id=o_id,
+			fig=fig,
+			ax=ax[:, col : col + 1],
+			color=color,
+			ci_scale=ci_scale,
+			ci_alpha=ci_alpha,
+			**line_kwargs,
+		)
 
 	return fig, ax
 
@@ -591,14 +620,23 @@ def plot_clusters(
 
 	for k in k_ids:
 		plot_single_cluster(
-			grid, dims, k, c_id=c_id, hyperprior=hyperprior, hyperposterior=hyperposterior, o_id=o_id,
-			fig=fig, ax=ax, color=palette[k], ci_scale=ci_scale, ci_alpha=ci_alpha, **line_kwargs)
+			grid,
+			dims,
+			k,
+			c_id=c_id,
+			hyperprior=hyperprior,
+			hyperposterior=hyperposterior,
+			o_id=o_id,
+			fig=fig,
+			ax=ax,
+			color=palette[k],
+			ci_scale=ci_scale,
+			ci_alpha=ci_alpha,
+			**line_kwargs,
+		)
 
 	if legend:
-		handles = [
-			plt.Line2D([0], [0], color=palette[k], label=f"cluster {k}")
-			for k in k_ids
-		]
+		handles = [plt.Line2D([0], [0], color=palette[k], label=f"cluster {k}") for k in k_ids]
 		fig.legend(handles=handles, loc="outside right center")
 
 	return fig, ax
@@ -724,8 +762,14 @@ def plot_single_task_prediction(
 			pred_mean = np.asarray(pred_block.mean)
 			pred_std = np.sqrt(np.diagonal(np.asarray(pred_block.covariance)))
 			a.plot(x_grid, pred_mean, linestyle="-", color=prediction_color)
-			a.fill_between(x_grid, pred_mean - ci_scale * pred_std, pred_mean + ci_scale * pred_std,
-							color=prediction_color, alpha=ci_alpha, linewidth=0)
+			a.fill_between(
+				x_grid,
+				pred_mean - ci_scale * pred_std,
+				pred_mean + ci_scale * pred_std,
+				color=prediction_color,
+				alpha=ci_alpha,
+				linewidth=0,
+			)
 
 		x_obs, y_obs = _task_xy(dataset, dims, t_id, c_id, o)
 		a.scatter(x_obs, y_obs, color=point_color, **scatter_kwargs)
@@ -736,7 +780,9 @@ def plot_single_task_prediction(
 
 	if legend:
 		handles = [
-			plt.Line2D([0], [0], linestyle="--", color=palette[k], label=f"cluster {k} ({100 * float(weights[k]):.0f}%)")
+			plt.Line2D(
+				[0], [0], linestyle="--", color=palette[k], label=f"cluster {k} ({100 * float(weights[k]):.0f}%)"
+			)
 			for k in range(K)
 		]
 		fig.legend(handles=handles, loc="outside right center")

@@ -1,6 +1,7 @@
 """
 Sample from a multivariate normal distribution (used to sample Gaussian process realisations).
 """
+
 import jax.random as jr
 import jax.numpy as jnp
 from jax import Array
@@ -30,4 +31,4 @@ def sample_gp(key: Array, mean: Array, cov: Array, jitter: Array = DEFAULT_JITTE
 	-------
 	Sampled values. Shape `(..., N)`.
 	"""
-	return jr.multivariate_normal(key, mean, cov + jitter*jnp.eye(cov.shape[-1]))
+	return jr.multivariate_normal(key, mean, cov + jitter * jnp.eye(cov.shape[-1]))

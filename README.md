@@ -1,3 +1,7 @@
+# Important notice
+
+This repository has moved to another organisation, and active development now continues [in the new repository](https://github.com/UNamurCSFaculty/mimosa-ml). This repository has been archived.
+
 # MIMOSA: Multi-Input Multi-Output Sample Analysis 
 
 A fully-featured *multi-task Gaussian process framework* for analysing functional data.
